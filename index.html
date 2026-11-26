@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Estante do PC</title>
-<meta name="description" content="Jogos da Steam que rodam em dois PCs fracos: filtros por nível, PT-BR, gênero e modo Tinder.">
+<meta name="description" content="Jogos da Steam que rodam em dois PCs fracos: catálogo por gênero, PT-BR, joias escondidas e modo Tinder.">
 <meta name="theme-color" content="#171a21">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -12,58 +12,75 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://wsrv.nl">
 <link rel="preconnect" href="https://shared.akamai.steamstatic.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script>try{var a=JSON.parse(localStorage.getItem("estante-pc-v1-ajustes")||"null");if(a&&a.tema==="claro")document.documentElement.dataset.theme="light";}catch(e){}</script>
-<link rel="stylesheet" href="estilo.css?v=78b01885">
+<link rel="stylesheet" href="estilo.css?v=17afdf7a">
 </head>
 <body>
-<a class="pular-lista" href="#lista">Pular para a lista de jogos</a>
+<a class="pular-lista" href="#conteudo">Pular para os jogos</a>
 <main class="wrap" id="topo">
   <header class="cabeca">
     <div class="cabeca-txt">
       <h1>Estante do PC</h1>
-      <p class="sub">1.000 jogos da Steam · etapa <span id="etapa">1</span> de 4 · atualizado em 26/11/2026</p>
+      <p class="sub">1.269 jogos da Steam · etapa <span id="etapa">1</span> de 4 · atualizado em 26/11/2026</p>
       <p class="resumo" id="resumo">Abrindo a estante…</p>
     </div>
     <div class="cabeca-bts">
       <button type="button" class="btn btn-forte" id="b-tinder">🃏 Modo Tinder</button>
+      <button type="button" class="btn" id="b-marc">★ Minhas marcações</button>
+      <button type="button" class="btn" id="b-capas">📦 Guardar capas</button>
       <button type="button" class="btn" id="b-tema" aria-pressed="false">☀ Tema claro</button>
     </div>
     <div class="meta-steam" id="meta-steam"></div>
   </header>
 
-  <nav class="barra-topo" id="barra-topo" aria-label="Busca e atalhos">
-    <label class="sr" for="q">Buscar por nome, desenvolvedora ou etiqueta</label>
-    <input type="search" id="q" placeholder="Buscar jogo, estúdio ou etiqueta" autocomplete="off" enterkeyhint="search">
-    <div class="atalhos">
-      <button type="button" class="chip chip-forte" data-ir="tinder">🃏 Tinder</button>
-      <button type="button" class="chip" data-aba="para" aria-pressed="false">✨ Para você</button>
-      <button type="button" class="chip" data-aba="marc" aria-pressed="false">Minhas marcações</button>
-      <button type="button" class="chip" data-ir="filtros">Filtros</button>
-      <button type="button" class="chip" data-ir="topo" aria-label="Voltar ao topo">Topo ↑</button>
+  <nav class="barra-topo" id="barra-topo" aria-label="Busca, gêneros e filtros">
+    <p class="aviso-dados" id="aviso-dados" hidden><span id="aviso-dados-txt"></span> <button type="button" class="btn" id="b-tentar">Tentar de novo</button></p>
+    <div class="bt-linha">
+      <label class="sr" for="q">Buscar por nome, estúdio ou etiqueta</label>
+      <input type="search" id="q" placeholder="Buscar jogo, estúdio ou etiqueta" autocomplete="off" enterkeyhint="search">
+      <button type="button" class="btn" id="b-filtros" aria-expanded="false" aria-controls="painel-filtros">Mais filtros<span class="filtros-n" id="filtros-n"></span></button>
     </div>
+    <div class="painel-filtros" id="painel-filtros" hidden>
+      <div class="pf-campos">
+        <label class="campo"><span>Idioma</span><select id="f-idioma">
+          <option value="">Todos</option>
+          <option value="com">Com PT-BR</option>
+          <option value="dub">Dublado em PT-BR</option>
+          <option value="sem">Sem PT-BR</option>
+        </select></label>
+        <label class="campo"><span>Ordem</span><select id="f-ordem">
+          <option value="pop">Mais jogados</option>
+          <option value="nota">Melhor avaliados</option>
+          <option value="novos">Mais novos</option>
+          <option value="nome">Nome (A a Z)</option>
+          <option value="disco">Menor no disco</option>
+        </select></label>
+      </div>
+      <div class="filtros-checks">
+        <label class="check"><input type="checkbox" id="c-rom"> Só com romance</label>
+        <label class="check"><input type="checkbox" id="c-ctrl"> Só com controle</label>
+        <label class="check"><input type="checkbox" id="c-nao"> Mostrar os que não rodam</label>
+        <label class="check"><input type="checkbox" id="c-18" checked> Esconder +18</label>
+        <label class="check" title="Otome (protagonista mulher que namora homens) e romance só do mesmo sexo"><input type="checkbox" id="c-vet" checked> Esconder vetados</label>
+      </div>
+      <div class="actions"><button type="button" class="btn btn-forte" id="b-pronto">Pronto</button></div>
+    </div>
+    <div class="ativos" id="ativos" hidden></div>
+    <div class="gens" id="gens" role="group" aria-label="Gêneros"></div>
+    <p class="mostrando" id="mostrando" aria-live="polite">Carregando…</p>
   </nav>
 
-  <section class="panel" id="painel-pc" aria-labelledby="t-pc">
-    <div class="panel-head">
-      <h2 id="t-pc">Roda em qual PC?</h2>
-      <div class="seg" role="group" aria-label="Qual PC vale para os filtros e os selos" id="seg-pc">
-        <button type="button" data-pc="dois" aria-pressed="true">Nos dois</button>
-        <button type="button" data-pc="pai" aria-pressed="false">PC do pai</button>
-        <button type="button" data-pc="meu" aria-pressed="false">Meu notebook</button>
-      </div>
+  <div class="pc-linha">
+    <div class="seg" role="group" aria-label="Qual PC vale para os filtros e os selos" id="seg-pc">
+      <button type="button" data-pc="dois" aria-pressed="true">Nos dois</button>
+      <button type="button" data-pc="pai" aria-pressed="false">PC do pai</button>
+      <button type="button" data-pc="meu" aria-pressed="false">Meu notebook</button>
     </div>
     <p class="fine" id="pc-expl"></p>
-    <div class="pcs" id="pcs"></div>
-    <div class="disco">
-      <h3>Cabe no disco?</h3>
-      <div class="meter" id="meter" role="progressbar" aria-label="Espaço ocupado pelos jogos marcados para instalar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="fill"></div></div>
-      <p class="leitura" id="leitura"></p>
-      <p class="fine">São duas marcações na capa: a estrela ☆, no canto, é "tenho interesse" e não mexe no disco. Tocar na capa é "quero instalar": o jogo ganha uma borda azul e entra nesta conta.</p>
-      <div class="actions"><button type="button" class="btn" id="b-desmarcar">Desmarcar todos de instalar</button></div>
-    </div>
-  </section>
+  </div>
 
   <section aria-labelledby="t-niveis">
     <h2 id="t-niveis" class="sr">Níveis</h2>
@@ -76,9 +93,35 @@
     </div>
   </section>
 
+  <div id="conteudo">
+    <section class="catalogo" id="catalogo" aria-label="Catálogo"></section>
+    <section class="grade-sec" id="grade-sec" aria-labelledby="grade-tit" hidden>
+      <div class="grade-cab" id="grade-cab">
+        <button type="button" class="voltar" id="b-voltar">← Voltar ao catálogo</button>
+        <div class="grade-tit"><h2 id="grade-tit"></h2><span class="count" id="grade-n"></span></div>
+        <p class="fine" id="grade-dsc"></p>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="empty" id="vazio" hidden><p>Nenhum jogo aqui com esses filtros.</p><button type="button" class="limpar" data-limpar="1">Limpar filtros</button></div>
+      <button type="button" class="mais" id="mais" hidden>Mostrar mais</button>
+    </section>
+  </div>
+
+  <section class="panel" id="painel-pc" aria-labelledby="t-pc">
+    <h2 id="t-pc">Os PCs e o disco</h2>
+    <div class="pcs" id="pcs"></div>
+    <div class="disco">
+      <h3>Cabe no disco?</h3>
+      <div class="meter" id="meter" role="progressbar" aria-label="Espaço ocupado pelos jogos marcados para instalar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="fill"></div></div>
+      <p class="leitura" id="leitura"></p>
+      <p class="fine">São duas marcações na capa: a estrela ☆, no canto, é "tenho interesse" e não mexe no disco; tocar na capa é "quero instalar" (borda azul) e entra nesta conta. Para ver o jogo, toque em "Ver o jogo".</p>
+      <div class="actions"><button type="button" class="btn" id="b-desmarcar">Desmarcar todos de instalar</button></div>
+    </div>
+  </section>
+
   <section class="panel" id="marcacoes" aria-labelledby="t-marc">
-    <div class="panel-head"><h2 id="t-marc">Minhas marcações</h2></div>
-    <p class="marc-resumo" id="marc-resumo"></p>
+    <h2 id="t-marc">Minhas marcações</h2>
+    <div class="abas" role="group" aria-label="Ver as marcações" id="abas"></div>
     <details class="mais-info"><summary>Guardar uma cópia das marcações</summary>
       <p class="fine">Tudo o que você marca (interesse, instalar, quero jogar, já joguei e não quero) fica salvo só neste navegador. Para levar a outro aparelho, ou não perder se limpar o navegador, baixe uma cópia e carregue no outro.</p>
       <div class="actions">
@@ -90,52 +133,30 @@
     <p class="aviso" id="aviso-salvar" hidden>Aqui as marcações não ficam salvas (navegação anônima?). Baixe uma cópia antes de fechar.</p>
   </section>
 
-  <section class="filters" id="filtros" aria-label="Filtros">
-    <div class="abas" role="group" aria-label="Quais jogos ver" id="abas"></div>
-    <button type="button" class="btn filtros-btn" id="b-filtros" aria-expanded="false" aria-controls="filtros-mais">Mais filtros<span class="filtros-n" id="filtros-n"></span></button>
-    <div class="filtros-mais" id="filtros-mais">
-      <label class="campo"><span>Gênero</span><select id="f-gen"><option value="">Todos os gêneros</option></select></label>
-      <label class="campo"><span>Idioma</span><select id="f-idioma">
-        <option value="">Todos</option>
-        <option value="com">Com PT-BR</option>
-        <option value="dub">Dublado em PT-BR</option>
-        <option value="sem">Sem PT-BR</option>
-      </select></label>
-      <label class="campo"><span>Ordem</span><select id="f-ordem">
-        <option value="pop">Mais jogados</option>
-        <option value="nota">Melhor avaliados</option>
-        <option value="novos">Mais novos</option>
-        <option value="nome">Nome (A a Z)</option>
-        <option value="disco">Menor no disco</option>
-      </select></label>
-      <div class="filtros-checks">
-        <label class="check"><input type="checkbox" id="c-rom"> Só com romance</label>
-        <label class="check"><input type="checkbox" id="c-18" checked> Esconder +18</label>
-        <label class="check" title="Otome (protagonista mulher que namora homens) e romance só do mesmo sexo"><input type="checkbox" id="c-vet" checked> Esconder vetados</label>
-        <label class="check"><input type="checkbox" id="c-on"> Esconder só on-line</label>
-        <label class="check"><input type="checkbox" id="c-nao"> Mostrar os que não rodam</label>
-        <label class="check"><input type="checkbox" id="c-ctrl"> Só com controle</label>
-      </div>
-    </div>
-    <p class="mostrando" id="mostrando" aria-live="polite"></p>
-  </section>
-
-  <section id="lista" class="lista" aria-label="Jogos">
-    <div class="grid" id="grid"></div>
-    <div class="empty" id="vazio" hidden><p>Nenhum jogo com esses filtros.</p><button type="button" class="limpar" id="b-limpar">Limpar filtros</button></div>
-    <button type="button" class="mais" id="mais" hidden>Mostrar mais</button>
-  </section>
-
   <footer class="rodape">
     <p>Dados da loja Steam e da SteamSpy. Os níveis são uma estimativa pelos requisitos mínimos e recomendados de cada jogo.</p>
   </footer>
 </main>
 
 <dialog id="ficha" aria-labelledby="f-nome"></dialog>
+<dialog id="dlg-capas" aria-labelledby="t-capas">
+  <div class="dc-in">
+    <div class="dc-topo"><h2 id="t-capas">📦 Guardar capas no aparelho</h2><button type="button" class="dc-x" data-dc="fechar" aria-label="Fechar">✕</button></div>
+    <p class="fine">Guarda as capas pequenas (uns 6 KB cada) neste navegador: elas abrem na hora, até sem internet. Toda capa que você já viu também fica guardada sozinha. Pode pausar e continuar depois; as que já estão guardadas são puladas.</p>
+    <label class="campo"><span>O que guardar</span><select id="dc-escopo"></select></label>
+    <div class="meter" id="dc-meter" role="progressbar" aria-label="Capas guardadas" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="fill"></div></div>
+    <p class="leitura" id="dc-txt"></p>
+    <p class="fine" id="dc-espaco"></p>
+    <div class="actions">
+      <button type="button" class="btn btn-forte" id="dc-baixar">Baixar</button>
+      <button type="button" class="btn" id="dc-pausar" hidden>Pausar</button>
+    </div>
+  </div>
+</dialog>
 <div class="tinder" id="tinder" role="dialog" aria-modal="true" aria-label="Modo Tinder" hidden></div>
 <button type="button" class="barra-disco" id="barra-disco" hidden><span class="bd-meter"><span class="bd-fill"></span></span><span class="bd-txt"></span></button>
 
-<script>window.CONF = {"atualizado":"26/11/2026","total":1000,"etapa":1,"etapas":[1000,5000,20000,"todos"],"arqs":[{"n":1,"v":"4baf1cb1","vf":"ef861d78","kb":205,"kbf":1938,"j":1000}],"tags":["1980s","1990's","2.5D","2D","2D Fighter","2D Platformer","3D","3D Fighter","3D Platformer","4 Player Local","4X","Action","Action RPG","Action RTS","Action Roguelike","Action-Adventure","Addictive","Adventure","Agriculture","Aliens","Alternate History","Animals","Animation & Modeling","Anime","Arcade","Arena Shooter","Artificial Intelligence","Assassins","Atmospheric","Auto Battler","Automation","Automobile Sim","Base Building","Battle Royale","Beat 'em up","Beautiful","Bikes","Billiards","Board Game","Boomer Shooter","Boss Rush","Boxing","Building","Bullet Heaven","Bullet Hell","Bullet Time","CRPG","Capitalism","Card Battler","Card Game","Cartoon","Cartoony","Casual","Cats","Character Action Game","Character Customization","Choices Matter","Choose Your Own Adventure","Cinematic","City Builder","Class-Based","Classic","Cleaning","Co-op","Co-op Campaign","Cold War","Collectathon","Colony Sim","Colorful","Combat","Combat Racing","Comedy","Competitive","Controller","Cooking","Cozy","Crafting","Creature Collector","Crime","Cult","Cute","Cyberpunk","Dark","Dark Comedy","Dark Fantasy","Dark Humor","Dating Sim","Deckbuilding","Demons","Design & Illustration","Destruction","Detective","Difficult","Dinosaurs","Diplomacy","Dragons","Driving","Dungeon Crawler","Dwarves","Dystopian ","Early Access","Economy","Education","Emotional","Episodic","Escape Room","Experimental","Exploration","Extraction Shooter","FMV","FPS","Faith","Family Friendly","Fantasy","Farming","Farming Sim","Fast-Paced","Female Protagonist","Fighting","First-Person","Fishing","Flight","Football (Soccer)","Free to Play","Funny","Futuristic","Gambling","God Game","Golf","Gore","Gothic","Grand Strategy","Great Soundtrack","Gun Customization","Hack and Slash","Hacking","Hand-drawn","Heist","Hentai","Hero Shooter","Hex Grid","Historical","Hobby Sim","Horror","Horses","Hunting","Idler","Immersive Sim","Incremental","Indie","Interactive Fiction","Inventory Management","Isometric","JRPG","LGBTQ+","Level Editor","Life Sim","Linear","Local Co-Op","Local Multiplayer","Logic","Loot","Looter Shooter","Lore-Rich","Lovecraftian","MMORPG","MOBA","Magic","Management","Martial Arts","Massively Multiplayer","Match 3","Mechs","Medical Sim","Medieval","Memes","Metroidvania","Military","Mini Golf","Minimalist","Mining","Mod","Moddable","Modern","Motocross","Motorbike","Multiplayer","Multiple Endings","Music","Musou","Mystery","Mythology","Nature","Naval","Naval Combat","Ninja","Noir","Nostalgia","Nudity","Offroad","Online Co-Op","Open World","Open World Survival Craft","Outbreak Sim","Parkour","Party","Party Game","Party-Based RPG","Perma Death","Philosophical","Physics","Pirates","Pixel Graphics","Platformer","Point & Click","Political Sim","Post-apocalyptic","Precision Platformer","Procedural Generation","Programming","Psychedelic","Psychological","Psychological Horror","Puzzle","Puzzle Platformer","PvE","PvP","Quick-Time Events","RPG","RTS","Racing","Real Time Tactics","Realistic","Relaxing","Remake","Replay Value","Resource Management","Retro","Rhythm","Robots","Roguelike","Roguelike Deckbuilder","Roguelite","Romance","Rome","Sailing","Sandbox","Sci-fi","Science","Sexual Content","Shoot 'Em Up","Shooter","Shop Keeper","Short","Side Scroller","Simulation","Singleplayer","Sniper","Snow","Social Deduction","Souls-like","Soundtrack","Space","Space Sim","Spectacle fighter","Split Screen","Sports","Stealth","Steampunk","Story Rich","Strategy","Strategy RPG","Stylized","Submarine","Superhero","Surreal","Survival","Survival Horror","Swordplay","Tabletop","Tactical","Tactical RPG","Tanks","Team-Based","Third Person","Third-Person Shooter","Thriller","Time Management","Time Manipulation","Time Travel","Top-Down","Top-Down Shooter","Tower Defense","Trading","Trading Card Game","Transportation","Turn-Based","Turn-Based Combat","Turn-Based Strategy","Turn-Based Tactics","Twin Stick Shooter","Typing","Underwater","VR","Vampires","Vehicular Combat","Vikings","Villain Protagonist","Violent","Visual Novel","Voxel","Walking Simulator","War","Wargame","Western","World War I","World War II","Wuxia","Xianxia","Zombies","Zoo","eSports"],"tags_pt":["Anos 80","Anos 90","2,5D","2D ","Luta 2D","Plataforma 2D","3D","Luta 3D","Plataforma 3D","Local para 4 Jogadores","4X","Ação","RPG de Ação","Estratégia em Tempo Real com Ação","Roguelike de Ação","Ação / Aventura","Viciante","Aventura","Agricultura","Alienígenas","História Alternativa","Animais","Animação e Modelagem","Anime","Arcade","Tiro em Arena","Inteligência Artificial","Assassinos","Atmosférico","Batalha Automática","Automação","Simulador Automobilístico","Construção de Bases","Battle Royale","Porradaria","Bonito","Bicicletas (e Motocicletas)","Sinuca","Jogo de Tabuleiro","Tiro de Tiozão","Duelo contra Chefões","Boxe","Construção","Paraíso de Balas","Inferno de Balas","Parar o Tempo","CRPG","Capitalismo","Batalha com Cartas","Cartas","Desenho Animado","Cartunizado","Casual","Gatos","Jogo de Ação Focado em Personagem","Personalização de Personagem","Você Decide","Escolha a sua Aventura","Cinematográfico","Construção de Cidades","Baseado em Classes","Clássico","Limpeza","Cooperativo","Campanha Cooperativa","Guerra Fria","Colete Tudo","Simulador de Colônias","Colorido","Combate","Corrida com Combate","Comédia","Competitivo","Controle","Culinária","Aconchegante","Fabricação","Coleção de Criaturas","Crime","Cultos","Fofo","Cyberpunk","Sombrio","Humor Pesado","Fantasia Sombria","Humor Ácido","Simulador de Encontros","Montagem de Decks","Demônios","Design e Ilustração","Destruição","Detetive","Impiedoso","Dinossauros","Diplomacia","Dragões","Direção","Explorador de Calabouços","Anões","Distópico","Acesso Antecipado","Economia","Educativo","Comovente","Episódico","Fuja da Sala","Experimental","Exploração","Tiro de Extração","FMV","Tiro em Primeira Pessoa (FPS)","Fé","Para Toda a Família","Fantasia","Rural","Simulador Rural","Ritmo Rápido","Protagonista Mulher","Luta","Primeira Pessoa","Pesca","Voo","Futebol","Gratuito para Jogar","Engraçado","Futurista","Jogos de Azar","Jogo de Divindade","Golfe","Violência Detalhada","Gótico","Grande Estratégia","Trilha Sonora Boa","Personalização de Armas","Hack and Slash","Hacker","Desenhado à Mão","Assalto","Hentai","Tiro de Heróis","Grade Hexagonal","Histórico","Simulador de Passatempo","Terror","Cavalos","Caça","Progressão Ociosa","Simulador Imersivo","Incremental","Indie","Ficção Interativa","Gerenciamento de Inventário","Isométrico","JRPG","LGBTQIA+","Editor de Níveis","Simulador de Vida Real","Linear","Cooperativo Local","Multijogador Local","Lógica","Saques","Tiro com Saques","Enredo Rico","Lovecraftiano","MMORPG","MOBA","Mágica","Gerenciamento","Artes Marciais","Multijogador Massivo","Combinar 3","Mechas","Simulador Médico","Medieval","Memes","Metroidvania","Militar","Minigolfe","Minimalista","Mineração","Mod ","Compatível com Mods","Moderno","Motocross","Motocicletas","Multijogador","Vários Finais","Música","Musou","Mistério","Mitologia","Natureza","Naval","Combate Naval","Ninja","Noir","Nostalgia","Nudez","Estrada de Terra","Cooperativo On-line","Mundo Aberto","Sobrevivência em Mundo Aberto","Simulador de Epidemias","Parkour","Em Grupos","Reúna a Galera","RPG de Grupos","Morte Permanente","Filosófico","Física","Piratas","Gráficos Pixelados","Plataforma","Apontar e Clicar","Simulador Político","Pós-Apocalíptico","Plataforma de Precisão","Geração Procedural","Programação","Psicodélico","Psicológico","Terror Psicológico","Quebra-Cabeça","Plataforma com Quebra-Cabeça","Jogador X Ambiente (PvE)","Jogador x Jogador (PvP)","Eventos Rápidos","RPG","Estratégia em Tempo Real (RTS)","Corrida","Tática em Tempo Real","Realístico","Relaxante","Remake","Alta Rejogabilidade","Gerenciamento de Recursos","Retrô","Ritmo","Robôs","Roguelike","Montagem de Decks Roguelike","Roguelite","Romance","Roma","Navegação","Faça o que Quiser","Ficção Científica","Ciência","Conteúdo Sexual","Mandando Bala","Tiro","Gerenciamento de Lojas","Curta-Metragem","Câmera Lateral","Simulação","Um Jogador","Franco-Atirador","Neve","Dedução Social","Soulslike","Trilha Sonora","Espacial","Simulador Espacial","Luta Espetacular","Tela Dividida","Esportes","Furtivo","Steampunk","Boa Trama","Estratégia","RPG de Estratégia","Estilizado","Submarino","Super-Heróis","Surrealista","Sobrevivência ","Terror de Sobrevivência","Espada","Jogo de Mesa","Tático","RPG Tático","Tanques","Baseado em Equipes","Terceira Pessoa","Tiro em Terceira Pessoa","Thriller","Gerenciamento de Tempo","Manipulação de Tempo","Viagem no Tempo","Visão Superior","SHMUP com Visão Superior","Defesa de Torres","Troca","Jogo de Cartas","Transportes","Em Turnos","Combate em Turnos","Estratégia em Turnos","Tática por Turnos","Controle com Alavanca Dupla","Digitação","Subaquático","RV","Vampiros","Combate com Veículos","Vikings","Protagonista Vilão","Violento","Romance Visual","Voxel","Simulador de Caminhada","Guerra","Jogo de Guerra","Velho Oeste","Primeira Guerra Mundial","Segunda Guerra Mundial","Wuxia","Xianxia","Zumbis","Zoológico","eSports"],"gen":{"vn":"Visual novel e romance","metroid":"Metroidvania","rogue":"Roguelike","luta":"Luta","corrida":"Corrida e direção","esporte":"Esporte","terror":"Terror","sobrev":"Sobrevivência e construção","tiro":"Tiro","rpg":"RPG","estrategia":"Estratégia","gestao":"Gestão e simulação","plataforma":"Plataforma","puzzle":"Quebra-cabeça","aventura":"Aventura e mundo aberto","acao":"Ação","casual":"Casual e festa","outro":"Outros"},"pcs":{"pai":{"nome":"PC do pai","cpu_n":"Ryzen 7 5700U (8 núcleos)","gpu_n":"Radeon Vega 8 (integrada)","ram":8,"livre":34},"meu":{"nome":"Meu notebook","cpu_n":"Core i7-1065G7 (4 núcleos)","gpu_n":"Iris Plus G7 (integrada)","ram":16,"livre":53}}};</script>
-<script src="app.js?v=0dcb34df"></script>
+<script>window.CONF = {"atualizado":"26/11/2026","total":1269,"etapa":2,"etapas":[1000,5000,20000,"todos"],"arqs":[{"n":1,"v":"521b2cf0","vf":"97cc62f4","kb":204,"kbf":1928,"j":1000},{"n":2,"v":"de9a7d70","vf":"5f8a71c0","kb":52,"kbf":451,"j":269}],"tags":["1980s","1990's","2.5D","2D","2D Fighter","2D Platformer","3D","3D Fighter","3D Platformer","4 Player Local","4X","Abstract","Action","Action RPG","Action RTS","Action Roguelike","Action-Adventure","Addictive","Adventure","Agriculture","Aliens","Alternate History","Animation & Modeling","Anime","Arcade","Arena Shooter","Artificial Intelligence","Assassins","Atmospheric","Auto Battler","Automation","Automobile Sim","Base Building","Battle Royale","Beat 'em up","Beautiful","Bikes","Billiards","Board Game","Boomer Shooter","Boss Rush","Boxing","Building","Bullet Heaven","Bullet Hell","Bullet Time","CRPG","Capitalism","Card Battler","Card Game","Cartoon","Cartoony","Casual","Cats","Character Action Game","Character Customization","Choices Matter","Choose Your Own Adventure","Cinematic","City Builder","Class-Based","Classic","Cleaning","Co-op","Co-op Campaign","Cold War","Collectathon","Colony Sim","Colorful","Combat","Combat Racing","Comedy","Competitive","Controller","Cooking","Cozy","Crafting","Creature Collector","Crime","Cult","Cute","Cyberpunk","Cycling","Dark","Dark Comedy","Dark Fantasy","Dark Humor","Dating Sim","Deckbuilding","Decorating","Demons","Design & Illustration","Desktop Companion","Destruction","Detective","Difficult","Dinosaurs","Diplomacy","Dogs","Dragons","Driving","Dungeon Crawler","Dwarves","Dystopian ","Early Access","Economy","Education","Emotional","Episodic","Escape Room","Experimental","Exploration","Extraction Shooter","FMV","FPS","Faith","Family Friendly","Fantasy","Farming","Farming Sim","Fast-Paced","Female Protagonist","Fighting","First-Person","Fishing","Flight","Football (Soccer)","Free to Play","Funny","Futuristic","Gambling","God Game","Golf","Gore","Gothic","Grand Strategy","Great Soundtrack","Gun Customization","Hack and Slash","Hacking","Hand-drawn","Heist","Hentai","Hero Shooter","Hex Grid","Hidden Object","Historical","Hobby Sim","Horror","Hunting","Idler","Immersive Sim","Incremental","Indie","Interactive Fiction","Inventory Management","Isometric","JRPG","Job Simulator","LGBTQ+","Level Editor","Life Sim","Linear","Local Co-Op","Local Multiplayer","Logic","Loot","Looter Shooter","Lore-Rich","Lovecraftian","MMORPG","MOBA","Magic","Management","Mars","Martial Arts","Massively Multiplayer","Match 3","Mechs","Medical Sim","Medieval","Memes","Metroidvania","Military","Mini Golf","Minimalist","Mining","Mod","Moddable","Motocross","Motorbike","Multiplayer","Multiple Endings","Music","Musou","Mystery","Mythology","Narrative","Nature","Naval","Naval Combat","Ninja","Noir","Nostalgia","Nudity","Offroad","Old School","Online Co-Op","Open World","Open World Survival Craft","Organizing","Outbreak Sim","Parkour","Party","Party Game","Party-Based RPG","Perma Death","Philosophical","Physics","Pinball","Pirates","Pixel Graphics","Platformer","Point & Click","Political Sim","Post-apocalyptic","Precision Platformer","Procedural Generation","Programming","Psychedelic","Psychological","Psychological Horror","Puzzle","Puzzle Platformer","PvE","PvP","Quick-Time Events","RPG","RTS","Racing","Real Time Tactics","Real-Time","Real-Time with Pause","Realistic","Relaxing","Remake","Replay Value","Resource Management","Retro","Rhythm","Robots","Rock Music","Roguelike","Roguelike Deckbuilder","Roguelite","Romance","Rome","Runner","Sailing","Samurai","Sandbox","Satire","Sci-fi","Science","Sexual Content","Shoot 'Em Up","Shooter","Shop Keeper","Short","Side Scroller","Simulation","Singleplayer","Sniper","Software","Souls-like","Soundtrack","Space","Space Sim","Spectacle fighter","Split Screen","Sports","Stealth","Steampunk","Story Rich","Strategy","Strategy RPG","Stylized","Submarine","Superhero","Supernatural","Surreal","Survival","Survival Horror","Swordplay","Tabletop","Tactical","Tactical RPG","Tanks","Team-Based","Tennis","Third Person","Third-Person Shooter","Thriller","Time Management","Time Manipulation","Time Travel","Top-Down","Top-Down Shooter","Tower Defense","Trading","Trading Card Game","Trains","Transhumanism","Transportation","Trivia","Turn-Based","Turn-Based Combat","Turn-Based Strategy","Turn-Based Tactics","Twin Stick Shooter","Typing","Underwater","Utilities","VR","Vampires","Vehicular Combat","Vikings","Villain Protagonist","Violent","Visual Novel","Voxel","Walking Simulator","War","Wargame","Western","Wholesome","World War I","World War II","Wuxia","Xianxia","Zombies","Zoo","eSports"],"tags_pt":["Anos 80","Anos 90","2,5D","2D ","Luta 2D","Plataforma 2D","3D","Luta 3D","Plataforma 3D","Local para 4 Jogadores","4X","Abstrato","Ação","RPG de Ação","Estratégia em Tempo Real com Ação","Roguelike de Ação","Ação / Aventura","Viciante","Aventura","Agricultura","Alienígenas","História Alternativa","Animação e Modelagem","Anime","Arcade","Tiro em Arena","Inteligência Artificial","Assassinos","Atmosférico","Batalha Automática","Automação","Simulador Automobilístico","Construção de Bases","Battle Royale","Porradaria","Bonito","Bicicletas (e Motocicletas)","Sinuca","Jogo de Tabuleiro","Tiro de Tiozão","Duelo contra Chefões","Boxe","Construção","Paraíso de Balas","Inferno de Balas","Parar o Tempo","CRPG","Capitalismo","Batalha com Cartas","Cartas","Desenho Animado","Cartunizado","Casual","Gatos","Jogo de Ação Focado em Personagem","Personalização de Personagem","Você Decide","Escolha a sua Aventura","Cinematográfico","Construção de Cidades","Baseado em Classes","Clássico","Limpeza","Cooperativo","Campanha Cooperativa","Guerra Fria","Colete Tudo","Simulador de Colônias","Colorido","Combate","Corrida com Combate","Comédia","Competitivo","Controle","Culinária","Aconchegante","Fabricação","Coleção de Criaturas","Crime","Cultos","Fofo","Cyberpunk","Ciclismo","Sombrio","Humor Pesado","Fantasia Sombria","Humor Ácido","Simulador de Encontros","Montagem de Decks","Decoração","Demônios","Design e Ilustração","Companheiro de Área de Trabalho","Destruição","Detetive","Impiedoso","Dinossauros","Diplomacia","Cachorros","Dragões","Direção","Explorador de Calabouços","Anões","Distópico","Acesso Antecipado","Economia","Educativo","Comovente","Episódico","Fuja da Sala","Experimental","Exploração","Tiro de Extração","FMV","Tiro em Primeira Pessoa (FPS)","Fé","Para Toda a Família","Fantasia","Rural","Simulador Rural","Ritmo Rápido","Protagonista Mulher","Luta","Primeira Pessoa","Pesca","Voo","Futebol","Gratuito para Jogar","Engraçado","Futurista","Jogos de Azar","Jogo de Divindade","Golfe","Violência Detalhada","Gótico","Grande Estratégia","Trilha Sonora Boa","Personalização de Armas","Hack and Slash","Hacker","Desenhado à Mão","Assalto","Hentai","Tiro de Heróis","Grade Hexagonal","Objetos Ocultos","Histórico","Simulador de Passatempo","Terror","Caça","Progressão Ociosa","Simulador Imersivo","Incremental","Indie","Ficção Interativa","Gerenciamento de Inventário","Isométrico","JRPG","Simulador de Emprego","LGBTQIA+","Editor de Níveis","Simulador de Vida Real","Linear","Cooperativo Local","Multijogador Local","Lógica","Saques","Tiro com Saques","Enredo Rico","Lovecraftiano","MMORPG","MOBA","Mágica","Gerenciamento","Marte","Artes Marciais","Multijogador Massivo","Combinar 3","Mechas","Simulador Médico","Medieval","Memes","Metroidvania","Militar","Minigolfe","Minimalista","Mineração","Mod ","Compatível com Mods","Motocross","Motocicletas","Multijogador","Vários Finais","Música","Musou","Mistério","Mitologia","Narrativa","Natureza","Naval","Combate Naval","Ninja","Noir","Nostalgia","Nudez","Estrada de Terra","Velha-Guarda","Cooperativo On-line","Mundo Aberto","Sobrevivência em Mundo Aberto","Organização","Simulador de Epidemias","Parkour","Em Grupos","Reúna a Galera","RPG de Grupos","Morte Permanente","Filosófico","Física","Pinball","Piratas","Gráficos Pixelados","Plataforma","Apontar e Clicar","Simulador Político","Pós-Apocalíptico","Plataforma de Precisão","Geração Procedural","Programação","Psicodélico","Psicológico","Terror Psicológico","Quebra-Cabeça","Plataforma com Quebra-Cabeça","Jogador X Ambiente (PvE)","Jogador x Jogador (PvP)","Eventos Rápidos","RPG","Estratégia em Tempo Real (RTS)","Corrida","Tática em Tempo Real","Tempo Real","Tempo Real com Pausa","Realístico","Relaxante","Remake","Alta Rejogabilidade","Gerenciamento de Recursos","Retrô","Ritmo","Robôs","Rock","Roguelike","Montagem de Decks Roguelike","Roguelite","Romance","Roma","Corredor","Navegação","Samurai","Faça o que Quiser","Sátira","Ficção Científica","Ciência","Conteúdo Sexual","Mandando Bala","Tiro","Gerenciamento de Lojas","Curta-Metragem","Câmera Lateral","Simulação","Um Jogador","Franco-Atirador","Software","Soulslike","Trilha Sonora","Espacial","Simulador Espacial","Luta Espetacular","Tela Dividida","Esportes","Furtivo","Steampunk","Boa Trama","Estratégia","RPG de Estratégia","Estilizado","Submarino","Super-Heróis","Sobrenatural","Surrealista","Sobrevivência ","Terror de Sobrevivência","Espada","Jogo de Mesa","Tático","RPG Tático","Tanques","Baseado em Equipes","Tênis","Terceira Pessoa","Tiro em Terceira Pessoa","Thriller","Gerenciamento de Tempo","Manipulação de Tempo","Viagem no Tempo","Visão Superior","SHMUP com Visão Superior","Defesa de Torres","Troca","Jogo de Cartas","Trens","Transumanismo","Transportes","Perguntas e Respostas","Em Turnos","Combate em Turnos","Estratégia em Turnos","Tática por Turnos","Controle com Alavanca Dupla","Digitação","Subaquático","Utilitários","RV","Vampiros","Combate com Veículos","Vikings","Protagonista Vilão","Violento","Romance Visual","Voxel","Simulador de Caminhada","Guerra","Jogo de Guerra","Velho Oeste","Do Bem","Primeira Guerra Mundial","Segunda Guerra Mundial","Wuxia","Xianxia","Zumbis","Zoológico","eSports"],"gen":{"vn":"Visual novel e romance","metroid":"Metroidvania","rogue":"Roguelike","luta":"Luta","corrida":"Corrida e direção","esporte":"Esporte","terror":"Terror","sobrev":"Sobrevivência e construção","tiro":"Tiro","rpg":"RPG","estrategia":"Estratégia","gestao":"Gestão e simulação","plataforma":"Plataforma","puzzle":"Quebra-cabeça","aventura":"Aventura e mundo aberto","acao":"Ação","casual":"Casual e festa","outro":"Outros"},"pcs":{"pai":{"nome":"PC do pai","cpu_n":"Ryzen 7 5700U (8 núcleos)","gpu_n":"Radeon Vega 8 (integrada)","ram":8,"livre":34},"meu":{"nome":"Meu notebook","cpu_n":"Core i7-1065G7 (4 núcleos)","gpu_n":"Iris Plus G7 (integrada)","ram":16,"livre":53}}};</script>
+<script src="app.js?v=b2223d24"></script>
 </body>
 </html>
