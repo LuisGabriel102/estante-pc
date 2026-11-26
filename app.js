@@ -1,11 +1,18 @@
 /* app.js — Estante do PC (JavaScript puro, sem bibliotecas).
-   Tela inicial: CATÁLOGO em seções empilhadas (Para você, Joias escondidas, Roda liso, Dublados, Romance, Steam Deck
-   e uma por gênero), cada uma com 2 linhas de cards e "Ver todos (N) →", que abre a GRADE completa.
-   Os dados vêm de dados/lista_NN.js (LISTA_CHEGOU), um arquivo depois do outro; a ficha de cada jogo vem de
-   dados/ficha_NN.js só quando alguém abre um jogo daquele arquivo.
-   Marcações ficam no localStorage ("estante-pc-v1"). Entre visitas só ficam guardados o PC escolhido e o tema:
-   filtros, busca e aba SEMPRE começam do zero (o app nunca abre mostrando só uma parte).
-   As capas são as originais da Steam (460x215); o '📦 Guardar capas' baixa pacotes de WebP e o sw.js guarda toda imagem vista. */
+   1.9 (26/11): layout e funções copiados da Estante do Switch (mod_L_navegar, mod_W_porque, mod_Q_etiquetas):
+   - tela inicial que só rola para baixo: seções em grade de capas (2 linhas) com "Ver tudo ›" — Seus interesses,
+     Quero jogar, 🟢 Mais a sua cara, RPG nichado, 💗 Dá pra namorar, 👾 RPG retrô, 💎 Joias, Gêneros (quadradinhos),
+     Desempenho nos seus PCs (quadradinhos), Roda liso, Dublados, Steam Deck;
+   - card de capa grande: ☆ interesse no canto esquerdo, 💾 instalar no direito, tocar abre a ficha; embaixo os selos
+     com a BOLINHA 🟢🟡🔴 primeiro (o mesmo "Pra você" do Switch: 🟢 vai gostar, 🟡 talvez, 🔴 acho que não), e o nome;
+   - "Ver tudo" abre a grade completa com título, contagem, ordem em pílulas e "Mostrar mais" (sozinho ao rolar);
+   - filtros numa folha (de baixo no celular, do lado no PC): Pra você (as bolinhas, dá pra escolher mais de uma),
+     português, romance, gênero, etiquetas, roda no PC, nota, tamanho, só os meus — com a contagem em cada opção;
+   - ficha do jeito do Switch: capa grande com setas de anterior/próximo, gênero clicável, bloco "Pra você" com os
+     motivos, chips, etiquetas que filtram, fotos, planos, requisitos, dados e "Parecidos com este".
+   Os dados vêm de dados/lista_NN.js (LISTA_CHEGOU); a ficha de cada jogo vem de dados/ficha_NN.js quando alguém abre.
+   Marcações no localStorage ("estante-pc-v1"); entre visitas só ficam guardados o PC escolhido e o tema.
+   Nada acompanha a rolagem no topo; só os botões flutuantes de baixo (↑ e a barra do disco). */
 (function () {
   'use strict';
 
@@ -14,19 +21,88 @@
   var CHAVE = 'estante-pc-v1';
   var CHAVE_AJ = 'estante-pc-v1-ajustes';
   var CACHE_IMG = 'epc-img-v1'; // o mesmo nome do sw.js
-  var POR_VEZ = 60;
-  var POR_SECAO = 8; // 2 linhas de 4 no computador; o CSS esconde o que passa de 2 linhas no celular
+  var POR_VEZ = 48;
+  var POR_SECAO = 12; // 2 linhas de 5 no PC; o CSS mostra 2 linhas de 2 no celular e de 3 no tablet
   var TOTAL_STEAM = 110000;
   var PCS = CONF.pcs || { pai: { nome: 'PC do pai' }, meu: { nome: 'Meu notebook' } };
   var CURTO = { pai: 'Pai', meu: 'Note' };
   var NIVEL = {
-    4: { nome: 'Roda liso', sim: '✓' }, 3: { nome: 'Roda', sim: '✓' }, 2: { nome: 'No limite', sim: '~' },
-    1: { nome: 'Não roda', sim: '✕' }, 0: { nome: 'Sem dados', sim: '?' }
+    4: { nome: 'Roda liso', sim: '✓', dsc: 'Passa dos recomendados' }, 3: { nome: 'Roda', sim: '✓', dsc: 'Atende o mínimo' },
+    2: { nome: 'No limite', sim: '~', dsc: 'Pode engasgar' }, 1: { nome: 'Não roda', sim: '✕', dsc: 'Escondidos: toque para ver' },
+    0: { nome: 'Sem dados', sim: '?', dsc: 'A loja não informa' }
   };
+  // ---- gêneros: os MESMOS da Estante do Switch (chaves, nomes, ícones e ordem); "rpgnicho" aqui é "RPG nichado" ----
+  var SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+  var GENRES = {
+    rpg: { label: 'RPG', svg: SVG + '<polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/></svg>' },
+    rpgnicho: { label: 'RPG nichado', svg: SVG + '<polygon points="12 2 21 7 21 17 12 22 3 17 3 7"/><polygon points="12 7 17 15 7 15"/><path d="M3 7l4 8M21 7l-4 8M12 22v-7"/></svg>' },
+    roguelike: { label: 'Roguelike', svg: SVG + '<path d="M12 3a8 8 0 0 0-8 8c0 3 1.6 5.2 4 6.3V21h8v-3.7c2.4-1.1 4-3.3 4-6.3a8 8 0 0 0-8-8z"/><circle cx="9" cy="11" r="1.6"/><circle cx="15" cy="11" r="1.6"/><path d="M11 21v-2M13 21v-2"/></svg>' },
+    tatica: { label: 'Tática', svg: SVG + '<path d="M7 20h10M8 20v-2h8v2M9 18l1-7h4l1 7M8 11h8M8 11V7h2v2h1V7h2v2h1V7h2v4"/></svg>' },
+    vn: { label: 'Novela visual', svg: SVG + '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>' },
+    investigacao: { label: 'Investigação', svg: SVG + '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' },
+    historia: { label: 'Aventura e história', svg: SVG + '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>' },
+    souls: { label: 'Estilo Souls', svg: SVG + '<path d="M12 3c1 3-1.5 4.5-2.5 6.5S8 13 8 14.5a4 4 0 0 0 8 0c0-2-1-3.5-2-5 0 1.5-.7 2.3-1.5 2.6.4-2.6-.3-5.7-.5-9.1z"/><path d="M5 21h14M7 21l2-3M17 21l-2-3"/></svg>' },
+    metroidvania: { label: 'Metroidvania', svg: SVG + '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h6v6h6v6M15 3v6h6"/><circle cx="18" cy="15" r="1"/></svg>' },
+    acao: { label: 'Ação', svg: SVG + '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>' },
+    luta: { label: 'Luta', svg: SVG + '<path d="M7 12V8a3 3 0 0 1 3-3h4a4 4 0 0 1 4 4v3a5 5 0 0 1-5 5h-2l-4-3z"/><path d="M8 17v4h7v-4"/><path d="M11 9h4"/></svg>' },
+    tiro: { label: 'Tiro', svg: SVG + '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>' },
+    plataforma: { label: 'Plataforma', svg: SVG + '<path d="M3 20h5v-5h5v-5h5V5h3"/></svg>' },
+    terror: { label: 'Terror', svg: SVG + '<path d="M5 21V10a7 7 0 0 1 14 0v11l-2.3-1.8-2.4 1.8-2.3-1.8-2.3 1.8-2.4-1.8z"/><circle cx="9.5" cy="10" r="1"/><circle cx="14.5" cy="10" r="1"/></svg>' },
+    sobrevivencia: { label: 'Sobrevivência e construção', svg: SVG + '<path d="M3 20L12 4l9 16z"/><path d="M9.5 20l2.5-5 2.5 5"/></svg>' },
+    vida: { label: 'Fazenda e vida tranquila', svg: SVG + '<path d="M12 21v-9"/><path d="M12 12C12 7.5 8.5 4 3 4c0 5 3.5 8 9 8z"/><path d="M12 15c0-4.5 3-8 9-8 0 4.5-3 8-9 8z"/><path d="M7 21h10"/></svg>' },
+    gestao: { label: 'Gestão e simulação', svg: SVG + '<path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>' },
+    estrategia: { label: 'Estratégia', svg: SVG + '<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/></svg>' },
+    puzzle: { label: 'Puzzle e raciocínio', svg: SVG + '<path d="M4 7h4a2 2 0 1 1 4 0h4v4a2 2 0 1 1 0 4v4H4z"/></svg>' },
+    casual: { label: 'Casual e passatempo', svg: SVG + '<path d="M4 9h12v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 11h2a2 2 0 0 1 0 4h-2"/><path d="M8 3v3M12 3v3"/></svg>' },
+    corrida: { label: 'Corrida', svg: SVG + '<path d="M3 18a9 9 0 1 1 18 0"/><path d="M12 18l4.5-6"/><circle cx="12" cy="18" r="1.2"/><path d="M6 14l1 .6M18 14l-1 .6M12 9v1.2"/></svg>' },
+    esporte: { label: 'Esporte', svg: SVG + '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>' },
+    festa: { label: 'Festa', svg: SVG + '<rect x="2" y="6" width="20" height="12" rx="6"/><path d="M6 12h4M8 10v4"/><circle cx="15.5" cy="11" r="1"/><circle cx="18" cy="13" r="1"/></svg>' },
+    musica: { label: 'Música e ritmo', svg: SVG + '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>' }
+  };
+  var GEN_ORDER = ['rpg', 'rpgnicho', 'roguelike', 'tatica', 'vn', 'investigacao', 'historia', 'souls', 'metroidvania', 'acao', 'luta', 'tiro', 'plataforma', 'terror', 'sobrevivencia', 'vida', 'gestao', 'estrategia', 'puzzle', 'casual', 'corrida', 'esporte', 'festa', 'musica'];
+  var GEN_DESC = {
+    rpg: 'Os RPGs grandes e conhecidos: histórias longas, com personagem que evolui.',
+    rpgnicho: 'RPGs pequenos e pouco conhecidos: retrô, masmorras, por turnos, de estúdio pequeno. Como Dragon Ruins e DecaDungeons.',
+    roguelike: 'Cada partida é diferente: morreu, recomeça mais forte. Inclui deckbuilders de corrida.',
+    tatica: 'Batalhas em grade ou por turnos, pensando cada movimento.',
+    vn: 'Muita leitura, escolhas e rotas diferentes.',
+    investigacao: 'Pistas, deduções, interrogatórios e tribunais.',
+    historia: 'Aventuras guiadas pela história.',
+    souls: 'Ação difícil, de aprender com cada morte.',
+    metroidvania: 'Mapa grande e interligado que se abre conforme você ganha poderes.',
+    acao: 'Ação em tempo real.',
+    luta: 'Jogos de luta e beat \'em up.',
+    tiro: 'Tiroteio em primeira pessoa, navinhas e bullet hell.',
+    plataforma: 'Pulo, precisão e fases em 2D ou 3D.',
+    terror: 'Sustos, sobrevivência e clima pesado.',
+    sobrevivencia: 'Sobreviver, juntar recursos, criar ferramentas e construir a base.',
+    vida: 'Fazenda, amizades e vida tranquila no campo.',
+    gestao: 'Administrar, construir e simular.',
+    estrategia: 'Cartas, guerra, defesa de torres e decisões de longo prazo.',
+    puzzle: 'Quebra-cabeças de lógica e raciocínio.',
+    casual: 'Passatempos: clicar, esperar, achar objetos, combinar peças.',
+    corrida: 'Corrida de carro, moto e kart.',
+    esporte: 'Futebol, basquete, golfe, pesca e outros esportes.',
+    festa: 'Minigames e partidas rápidas pra jogar junto.',
+    musica: 'Ritmo, dança e música.'
+  };
+  // cor de fundo da capa enquanto a imagem não chega (por gênero)
   var COR_GEN = {
-    vn: '#a8406f', metroid: '#6a48b0', rogue: '#b05a28', luta: '#a83636', corrida: '#a78a1f', esporte: '#378a42',
-    terror: '#6e1d27', sobrev: '#6e5230', tiro: '#475b6e', rpg: '#3852b0', estrategia: '#267a75', gestao: '#25719a',
-    plataforma: '#5f8a1b', puzzle: '#9a6b1a', aventura: '#2a78b0', acao: '#a33a34', casual: '#904296', outro: '#46525f'
+    rpg: '#3852b0', rpgnicho: '#5a3fb0', roguelike: '#b05a28', tatica: '#2f6f8f', vn: '#a8406f', investigacao: '#4a5a7a', historia: '#2a78b0',
+    souls: '#5a4a3a', metroidvania: '#6a48b0', acao: '#a33a34', luta: '#a83636', tiro: '#475b6e', plataforma: '#5f8a1b', terror: '#6e1d27',
+    sobrevivencia: '#6e5230', vida: '#4f8a3a', gestao: '#25719a', estrategia: '#267a75', puzzle: '#9a6b1a', casual: '#904296',
+    corrida: '#a78a1f', esporte: '#378a42', festa: '#a0458a', musica: '#7a3fa0'
+  };
+  function genNome(k) { return (CONF.gen && CONF.gen[k]) || (GENRES[k] && GENRES[k].label) || k || ''; }
+  function genSvg(k) { return (GENRES[k] && GENRES[k].svg) || ''; }
+  // ---- etiquetas no jeito da estante (g.et = "px tb jr"), as do etiquetas_def.js do Switch + "cr" (CRPG), só do PC ----
+  var ETIQ_GRUPOS = { jeito: 'Jeito de jogar', combate: 'Combate', historia: 'História', estilo: 'Estilo', duracao: 'Duração', jogar: 'Com quem' };
+  var ETIQ = {
+    jr: ['JRPG', 'jeito'], cr: ['CRPG', 'jeito'], mz: ['Masmorra', 'jeito'], lj: ['Livro-jogo', 'jeito'], mo: ['Pega monstros', 'jeito'], ow: ['Mundo aberto', 'jeito'],
+    pc: ['Point-and-click', 'jeito'], tb: ['Por turnos', 'combate'], tr: ['Tempo real', 'combate'], cb: ['Cartas', 'combate'], sh: ['Navinha (shmup)', 'combate'],
+    be: ['Beat \'em up', 'combate'], rm: ['Com romance', 'historia'], hi: ['História forte', 'historia'], pp: ['Crie seu herói', 'historia'],
+    px: ['Pixel art', 'estilo'], an: ['Anime', 'estilo'], cz: ['Tranquilo', 'estilo'], tl: ['Clima de terror', 'estilo'], cu: ['Curto', 'duracao'],
+    lg: ['Longo', 'duracao'], co: ['Cooperativo', 'jogar'], on: ['Só online', 'jogar'], f2: ['Grátis (F2P)', 'jogar']
   };
   var ABAS = [['marc', 'Todas as marcações'], ['int', '☆ Interesse'], ['quero', '✓ Quero jogar'], ['joguei', 'Já joguei'], ['inst', '💾 Instalar'], ['nao', 'Dispensados']];
 
@@ -46,33 +122,37 @@
   function dois(n) { return (n < 10 ? '0' : '') + n; }
   function gb(v) { return fmtGB.format(v) + ' GB'; }
   function mb(b) { return b >= 1073741824 ? fmtGB.format(b / 1073741824) + ' GB' : fmtGB.format(b / 1048576) + ' MB'; }
+  function jogosTxt(n) { return fmtN.format(n) + (n === 1 ? ' jogo' : ' jogos'); }
   function lerJSON(k, p) { try { var v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? p : v; } catch (e) { return p; } }
   function noPC(k) { var n = (PCS[k] && PCS[k].nome) || k; return /^Meu /.test(n) ? 'no m' + n.slice(1) : 'no ' + n; }
   function pctMeta(t) { var p = 100 * t / TOTAL_STEAM; return p < 1 ? fmtPct2.format(p) : fmtPct.format(p); }
   function cada(sel, fn) { Array.prototype.forEach.call(document.querySelectorAll(sel), fn); }
   // a capa original da Steam: é também a chave da WebP guardada pelos pacotes de capas (o sw.js entrega a guardada)
-  function urlCapa(c) { return BASE + c; }
+  function urlCapa(c) { return /^https?:/.test(c || '') ? c : BASE + c; }
 
   // ---------------- marcações e ajustes ----------------
   var M = lerJSON(CHAVE, {});
-  M.int = M.int || {}; M.inst = M.inst || {}; M.plano = M.plano || {};
+  M.int = M.int || {}; M.inst = M.inst || {}; M.plano = M.plano || {}; M.voto = M.voto || {}; M.gosto = M.gosto || {};
   var AJ = lerJSON(CHAVE_AJ, {}); // só o PC escolhido e o tema
   var podeSalvar = true;
   try { localStorage.setItem(CHAVE + '-teste', '1'); localStorage.removeItem(CHAVE + '-teste'); } catch (e) { podeSalvar = false; }
   function salvar() {
-    try { localStorage.setItem(CHAVE, JSON.stringify({ int: M.int, inst: M.inst, plano: M.plano })); }
+    try { localStorage.setItem(CHAVE, JSON.stringify({ int: M.int, inst: M.inst, plano: M.plano, voto: M.voto, gosto: M.gosto })); }
     catch (e) { podeSalvar = false; $('aviso-salvar').hidden = false; }
-    // avisa a sincronização (sync.js) que as marcações mudaram
+    // avisa a sincronização (bloco 1.8) que as marcações mudaram
     try { if (window.SYNC_PC) window.SYNC_PC.mudou(); } catch (e) {}
   }
-  function salvarAj() { try { localStorage.setItem(CHAVE_AJ, JSON.stringify({ pc: AJ.pc, tema: AJ.tema })); } catch (e) {} }
+  function salvarAj() { try { localStorage.setItem(CHAVE_AJ, JSON.stringify({ pc: AJ.pc, tema: AJ.tema, mao: !!AJ.mao, capas: AJ.capas || 'm' })); } catch (e) {} }
 
   // ---------------- filtros (não ficam guardados entre visitas) ----------------
   var ORDEM_PADRAO = 'pop'; // vira "pv" (Mais a sua cara) quando a lista traz o pv
-  function filtrosPadrao() { return { q: [], qTxt: '', idioma: '', ordem: ORDEM_PADRAO, rom: false, esc18: true, escVet: true, naoRoda: false, ctrl: false }; }
+  function filtrosPadrao() {
+    return { q: [], qTxt: '', idioma: '', ordem: ORDEM_PADRAO, rom: '', esc18: false, escVet: true, roda: '', ctrl: false,
+      cor: [], gen: '', et: [], nota: 0, tam: '', meus: '', facil: false };
+  }
   var F = filtrosPadrao();
   F.pc = AJ.pc === 'pai' || AJ.pc === 'meu' ? AJ.pc : 'dois';
-  // V: o que está na tela. modo "catalogo" ou "grade"; fonte da grade: {t:'sec'|'gen'|'nivel'|'aba'|'busca', k}
+  // V: o que está na tela. modo "catalogo" ou "grade"; fonte da grade: {t:'sec'|'gen'|'nivel'|'aba'|'busca'|'todos', k}
   var V = { modo: 'catalogo', fonte: null, fonteAntes: null, scrollCat: 0, irDepois: null };
 
   // ---------------- dados ----------------
@@ -92,7 +172,14 @@
   function prep(g) {
     g._vet = g.x === 'ot' || g.x === 'ms';
     g._tp = (g.t || []).map(tagPt).filter(Boolean);
-    g._b = norm(g.n + ' | ' + g._tp.join(' | ') + (g.et ? ' | ' + g.et : ''));
+    g._et = g.et ? g.et.split(' ') : [];
+    g._px = g.px ? g.px.split(' ').map(function (t) { var m = /^([a-zA-Z_]+)(-?[\d.]+)$/.exec(t); return m ? [m[1], +m[2]] : null; }).filter(Boolean) : null;
+    if (g.o == null) g.o = 999999;
+    g._ext = /^https?:/.test(g.c || '');
+    if (g.loja && !FICHAS[g.i]) FICHAS[g.i] = g.fi || g.ficha || { ds: g.ds || '' };
+    if (g.ef != null) TEM_EF = true;
+    calcGosto(g);
+    g._b = norm(g.n + ' | ' + g._tp.join(' | ') + ' | ' + genNome(g.g) + (g._et.length ? ' | ' + g._et.map(function (c) { return ETIQ[c] ? ETIQ[c][0] : ''; }).join(' ') : ''));
   }
   function injetar(src, erro) {
     var s = document.createElement('script');
@@ -119,11 +206,11 @@
       if (g.pv != null) TEM_PV = true;
       prep(g); JOGOS.push(g); POR_ID[g.i] = g;
     });
+    if (M.voto && Object.keys(M.voto).length) recalcGosto();
     // com o perfil de gostos na lista, a ordem padrão passa a ser "Mais a sua cara" (se ninguém mudou a ordem)
     if (TEM_PV && ORDEM_PADRAO !== 'pv') {
       if (F.ordem === ORDEM_PADRAO) F.ordem = 'pv';
       ORDEM_PADRAO = 'pv';
-      sincronizarCampos();
     }
     fila = fila.filter(function (x) { return x !== n; });
     falhou = falhou.filter(function (x) { return x !== n; });
@@ -171,11 +258,12 @@
       timerDesenho = 0;
       if (V.modo === 'catalogo') comAncora(function () { desenhar(true); }); else desenhar(true);
       atualizarResumo(); atualizarDisco();
+      if (folha.open) pintarFolha();
     }, primeiro ? 60 : 600);
     primeiro = false;
   }
 
-  // ---------------- nível, filtros e ordem ----------------
+  // ---------------- nível, gosto, filtros e ordem ----------------
   function nv(g) {
     var v = g.v || [0, 0];
     if (F.pc === 'pai') return v[0] || 0;
@@ -183,54 +271,67 @@
     return Math.max(v[0] || 0, v[1] || 0);
   }
   function notaP(g) { if (g.r == null) return -1; var rv = g.rv || 0; return (g.r * rv + 70 * 200) / (rv + 200); }
-  // "Para você": quando o jogo traz pv (0 a 100, o quanto combina com o usuário), vale o pv;
-  // sem pv, cai no critério antigo (romance e RPG primeiro, depois a nota)
-  var PV_MIN = 74; // faixa verde (🟢) da Estante do Switch: 74 a 100
-  function ordPara(a, b) {
-    var va = a.pv != null ? a.pv : -1, vb = b.pv != null ? b.pv : -1;
-    if (va !== vb) return vb - va;
-    var pa = (a.rom ? 2 : 0) + (a.g === 'rpg' ? 1 : 0), pb = (b.rom ? 2 : 0) + (b.g === 'rpg' ? 1 : 0);
-    return pb - pa || notaP(b) - notaP(a) || a.o - b.o;
+  function pvDe(g) { var v = g._pv !== undefined ? g._pv : g.pv; return v != null ? v : -1; }
+  // a bolinha (cor) do "Pra você": o nv do perfil_pc.py; sem nv, a faixa do pv (74-100 verde, 51-73 amarelo, 0-50 vermelho)
+  function corDe(g) {
+    var c = g._nv !== undefined ? g._nv : g.nv, pv = g._pv !== undefined ? g._pv : g.pv;
+    if (c === 'sim' || c === 'talvez' || c === 'nao') return c;
+    if (pv == null) return '';
+    return pv >= 74 ? 'sim' : pv >= 51 ? 'talvez' : 'nao';
   }
-  function paraVoce(g) {
-    if (M.plano[g.i] || g._vet || nv(g) < 3) return false;
-    if (g.nv) return g.nv === 'sim';            // 🟢 do perfil de gostos
-    if (g.pv != null) return g.pv >= PV_MIN;
-    return g.pt >= 1 && (g.r || 0) >= 85;       // sem perfil: critério antigo
-  }
+  var COR = { sim: ['🟢', 'Acho que você vai gostar', 'Vai gostar', 'w-sim'], talvez: ['🟡', 'Talvez', 'Talvez', 'w-talvez'], nao: ['🔴', 'Acho que não', 'Acho que não', 'w-nao'] };
+  var CORES = ['sim', 'talvez', 'nao'];
+  function ordPv(a, b) { return pvDe(b) - pvDe(a) || notaP(b) - notaP(a) || a.o - b.o; }
+  function paraVoce(g) { return corDe(g) === 'sim' && !M.plano[g.i] && !M.int[g.i] && nv(g) >= 3; }
   // joia: usa o campo jo quando a lista traz esse campo; se não, a regra da nota e das poucas avaliações
-  var TEM_JO = false, TEM_PV = false;
+  var TEM_JO = false, TEM_PV = false, TEM_EF = false;
   function ehJoia(g) {
-    if (nv(g) < 3) return false;
     if (TEM_JO) return g.jo === 1;
     return (g.r || 0) >= 90 && ((g.rv >= 500 && g.rv <= 20000) || (g['do'] || 0) <= 500000);
   }
+  function romOk(g, k) {
+    var r = g.rk || (g.rom ? 'opc' : 'nao');
+    if (k === 'namorar') return r === 'sim' || r === 'opc';
+    if (k === 'qualquer') return r === 'sim' || r === 'opc' || r === 'leve';
+    if (k === 'sem') return r === 'nao' || r === 'nc';
+    return r === k;
+  }
   function ordNota(a, b) { return notaP(b) - notaP(a) || a.o - b.o; }
   var ORDENS = {
-    pv: function (a, b) { return (b.pv != null ? b.pv : -1) - (a.pv != null ? a.pv : -1) || a.o - b.o; },
-    pop: function (a, b) { return a.o - b.o; },
+    pv: ordPv,
     nota: ordNota,
+    pop: function (a, b) { return a.o - b.o; },
     novos: function (a, b) { return (b.a || 0) - (a.a || 0) || a.o - b.o; },
     nome: function (a, b) { return colar.compare(a.n, b.n); },
-    disco: function (a, b) { return (a.s == null ? 1e9 : a.s) - (b.s == null ? 1e9 : b.s) || a.o - b.o; }
+    disco: function (a, b) { return (a.s == null ? 1e9 : a.s) - (b.s == null ? 1e9 : b.s) || a.o - b.o; },
+    trad: function (a, b) { return (a.pt ? 1e9 : a.ef == null ? 1e8 : a.ef) - (b.pt ? 1e9 : b.ef == null ? 1e8 : b.ef) || ordPv(a, b); }
   };
-  var NOMES_ORDEM = { pv: 'Mais a sua cara', pop: 'Mais jogados', nota: 'Melhor avaliados', novos: 'Mais novos', nome: 'Nome (A a Z)', disco: 'Menor no disco' };
+  var NOMES_ORDEM = { pv: '🎯 Mais a sua cara', nota: '★ Nota', pop: 'Mais jogados', novos: '✨ Mais novos', nome: 'A–Z Nome', disco: 'Menor no disco', trad: '✍️ Mais rápido de traduzir' };
 
+  function ehRetro(g) { return (g.g === 'rpg' || g.g === 'rpgnicho' || g.g === 'tatica') && (g._et.indexOf('px') >= 0 || g._et.indexOf('mz') >= 0 || g._et.indexOf('lj') >= 0); }
   var SECOES = [
-    { k: 'para', tit: '✨ Para você', dsc: 'Rodam no PC escolhido e combinam com você. Some quando você decide.',
-      f: paraVoce, ord: ordPara, pq: true },
-    { k: 'joias', tit: '💎 Joias escondidas', dsc: 'Nota altíssima, pouca gente conhece, e roda no PC escolhido.',
-      f: ehJoia, ord: ordNota },
+    { k: 'int', tit: '★ Seus interesses', dsc: 'Os jogos em que você tocou na estrela.', f: function (g) { return !!M.int[g.i]; }, meus: 1 },
+    { k: 'quero', tit: '▶ Quero jogar', dsc: '', f: function (g) { return M.plano[g.i] === 'quero'; }, meus: 1 },
+    { k: 'cara', tit: 'Mais a sua cara', ico: '🟢', dsc: 'A bolinha verde: os que eu acho que você vai gostar, do mais parecido com o seu gosto.', f: function (g) { return corDe(g) === 'sim'; } },
+    { k: 'nicho', tit: 'RPG nichado', gen: 'rpgnicho', dsc: GEN_DESC.rpgnicho, f: function (g) { return g.g === 'rpgnicho'; } },
+    { k: 'namorar', tit: '💗 Dá pra namorar', dsc: 'Romance central ou opcional, com os que dá pra namorar primeiro no seu gosto.', f: function (g) { return romOk(g, 'namorar'); } },
+    { k: 'MROM' },
+    { k: 'retro', tit: '👾 RPG retrô', dsc: 'RPG e tática em pixel, de masmorra ou livro-jogo.', f: ehRetro },
+    { k: 'fora', tit: '🌐 Fora da Steam', dsc: 'itch.io, DLsite e jogos grátis de fora da loja.', f: function (g) { return !!g.loja; } },
+    { k: 'LISTAS' },
+    { k: 'joias', tit: '💎 Joias escondidas', dsc: 'Nota altíssima e pouca gente conhece.', f: ehJoia },
+    { k: 'GENEROS' },
+    { k: 'NIVEIS' },
     { k: 'liso', tit: 'Roda liso nos seus PCs', dsc: 'Passam dos requisitos recomendados.', f: function (g) { return nv(g) === 4; } },
-    { k: 'dub', tit: 'Dublados em PT-BR', dsc: 'Com vozes em português do Brasil.', f: function (g) { return g.pt === 2; } },
-    { k: 'rom', tit: '💗 Romance', dsc: '', f: function (g) { return !!g.rom; } },
-    { k: 'deck', tit: 'Verificados no Steam Deck', dsc: 'Rodam bem num aparelho fraco: boa dica para os seus PCs.', f: function (g) { return g.dk === 3; } }
+    { k: 'dub', tit: '🎙 Dublados em PT-BR', dsc: 'Com vozes em português do Brasil.', f: function (g) { return g.pt === 2; } },
+    { k: 'deck', tit: 'Verificados no Steam Deck', dsc: 'Rodam bem num aparelho fraco: boa dica para os seus PCs.', f: function (g) { return g.dk === 3; } },
+    { k: 'para', tit: '💡 Para você', dsc: 'Bolinha verde, rodam no PC escolhido e você ainda não marcou: some quando você decide.', f: paraVoce, so: 1 }
   ];
   var SEC_K = {};
   SECOES.forEach(function (s) { SEC_K[s.k] = s; });
   function titSecao(s) {
     if (s.k === 'liso' && F.pc !== 'dois') return 'Roda liso ' + noPC(F.pc);
-    return s.tit;
+    return s.gen ? genNome(s.gen) : s.tit;
   }
 
   function abaOk(g, k) {
@@ -240,13 +341,40 @@
     if (k === 'inst') return !!M.inst[id];
     return pl === k;
   }
-  function passaGlobal(g, semEsconder) {
-    if (F.idioma === 'com' && !(g.pt >= 1)) return false;
-    if (F.idioma === 'dub' && g.pt !== 2) return false;
-    if (F.idioma === 'sem' && g.pt) return false;
-    if (F.rom && !g.rom) return false;
-    if (F.ctrl && !g.ct) return false;
-    if (!semEsconder) {
+  function tamOk(g, t) {
+    var s = g.s;
+    if (!t) return true;
+    if (s == null) return false;
+    if (t === 'ate2') return s <= 2;
+    if (t === '2a5') return s > 2 && s <= 5;
+    if (t === '5a10') return s > 5 && s <= 10;
+    if (t === '10a20') return s > 10 && s <= 20;
+    if (t === 'mais20') return s > 20;
+    if (t === 'cabe') { var k = F.pc === 'meu' ? 'meu' : 'pai'; return s <= ((PCS[k] && PCS[k].livre) || 0); }
+    return true;
+  }
+  // os filtros da folha; "ign" deixa um grupo de fora (para contar as opções dele, como no Switch)
+  function passaGlobal(g, semEsconder, ign) {
+    if (ign !== 'idioma' && F.idioma) {
+      if (F.idioma === 'com' && !(g.pt >= 1)) return false;
+      if (F.idioma === 'dub' && g.pt !== 2) return false;
+      if (F.idioma === 'sem' && g.pt) return false;
+    }
+    if (ign !== 'rom' && F.rom && !romOk(g, F.rom)) return false;
+    if (ign !== 'cor' && F.cor.length && F.cor.length < 3 && F.cor.indexOf(corDe(g)) < 0) return false;
+    if (ign !== 'gen' && F.gen && g.g !== F.gen) return false;
+    if (ign !== 'et' && F.et.length) { for (var i = 0; i < F.et.length; i++) if (g._et.indexOf(F.et[i]) < 0) return false; }
+    if (ign !== 'nota' && F.nota && !((g.r || 0) >= F.nota)) return false;
+    if (ign !== 'tam' && F.tam && !tamOk(g, F.tam)) return false;
+    if (ign !== 'meus' && F.meus) {
+      if (F.meus === 'int' && !M.int[g.i]) return false;
+      if (F.meus === 'inst' && !M.inst[g.i]) return false;
+      if (F.meus === 'quero' && M.plano[g.i] !== 'quero') return false;
+      if (F.meus === 'joia' && !ehJoia(g)) return false;
+    }
+    if (ign !== 'mais' && F.ctrl && !g.ct) return false;
+    if (ign !== 'idioma' && F.facil && !(!g.pt && g.efd === 'facil')) return false;
+    if (!semEsconder && ign !== 'mais') {
       if (F.esc18 && g.ad) return false;
       if (F.escVet && g._vet) return false;
     }
@@ -256,22 +384,34 @@
     if (fo.t === 'sec') return SEC_K[fo.k].f(g);
     if (fo.t === 'gen') return g.g === fo.k;
     if (fo.t === 'aba') return abaOk(g, fo.k);
+    if (fo.t === 'lista') return !!(LISTA_POS[fo.k] && LISTA_POS[fo.k][g.i]);
+    if (fo.t === 'mrom') return !!(MROM_POS[fo.k] && MROM_POS[fo.k][g.i]);
     if (fo.t === 'busca') { for (var k = 0; k < F.q.length; k++) if (g._b.indexOf(F.q[k]) < 0) return false; }
     return true;
   }
+  function rodaOk(n, r) {
+    if (!r) return n !== 1;
+    if (r === 'todos') return true;
+    if (r === 'liso') return n === 4;
+    if (r === 'roda') return n >= 3;
+    if (r === 'limite') return n === 2;
+    if (r === 'nao') return n === 1;
+    if (r === 'sem') return n === 0;
+    return true;
+  }
   // percorre todos os jogos uma vez: lista que passa, contagem por nível e quantos "não roda" ficaram escondidos
-  function filtrar(fo) {
-    var semEsc = !!fo && fo.t === 'aba';
+  function filtrar(fo, ign) {
+    var semEsc = !!fo && (fo.t === 'aba' || fo.t === 'lista');
     var cont = [0, 0, 0, 0, 0], lista = [], escondidos = 0;
     for (var i = 0; i < JOGOS.length; i++) {
       var g = JOGOS[i];
-      if (!semEsc && M.plano[g.i] === 'nao') continue;
-      if (!passaGlobal(g, semEsc)) continue;
+      if (!semEsc && M.plano[g.i] === 'nao' && !(fo && fo.t === 'busca')) continue;
+      if (!passaGlobal(g, semEsc, ign)) continue;
       if (fo && !passaFonte(g, fo)) continue;
       var n = nv(g);
       cont[n]++;
       if (fo && fo.t === 'nivel') { if (n !== fo.k) continue; }
-      else if (n === 1 && !F.naoRoda && !semEsc) { escondidos++; continue; }
+      else if (!semEsc && ign !== 'roda' && !rodaOk(n, F.roda)) { if (n === 1 && !F.roda) escondidos++; continue; }
       lista.push(g);
     }
     return { lista: lista, cont: cont, escondidos: escondidos };
@@ -279,163 +419,191 @@
   function ordenar(lista, fo) {
     var cmp = ORDENS[F.ordem] || ORDENS.pop;
     if (F.ordem === ORDEM_PADRAO && fo && fo.t === 'sec' && SEC_K[fo.k].ord) cmp = SEC_K[fo.k].ord;
+    if (F.ordem === ORDEM_PADRAO && fo && (fo.t === 'lista' || fo.t === 'mrom')) {
+      var ps = fo.t === 'lista' ? LISTA_POS[fo.k] : MROM_POS[fo.k];
+      cmp = function (a, b) { return (ps[a.i] || 999) - (ps[b.i] || 999); };
+    }
     return lista.sort(cmp);
   }
 
   // ---------------- cards ----------------
   var grid = $('grid');
   var ATUAL = [], MOSTRADOS = 0, BASE_ATUAL = { lista: [], cont: [0, 0, 0, 0, 0], escondidos: 0 };
+  var LISTAS = {}; // listas das seções da tela (para as setas da ficha)
 
   function seloNivel(n, rot) {
-    return '<span class="selo nv nv' + n + '" title="' + esc((rot ? rot + ': ' : '') + NIVEL[n].nome) + '">' + esc(rot ? rot + ' ' + NIVEL[n].sim : NIVEL[n].nome) + '</span>';
+    return '<span class="selo nv' + n + '" title="' + esc((rot ? (rot === CURTO.pai ? PCS.pai.nome : PCS.meu.nome) + ': ' : '') + NIVEL[n].nome) + '">' + esc(rot ? rot + ' ' + NIVEL[n].sim : NIVEL[n].nome) + '</span>';
   }
   function selosNivel(g) {
     var v = g.v || [0, 0];
     if (F.pc === 'dois') return seloNivel(v[0] || 0, CURTO.pai) + seloNivel(v[1] || 0, CURTO.meu);
     return seloNivel(nv(g));
   }
+  // a bolinha do "Pra você", igual à do Switch (mod_W_porque.js: selo "w-selo" no começo dos selos)
+  function seloGosto(g) {
+    var c = COR[corDe(g)];
+    if (!c) return '';
+    return '<button type="button" class="selo w-selo" data-acao="pq" title="Pra você: ' + esc(c[1]) + ' (' + pvDe(g) + ' de 100). Toque para ver o porquê" aria-label="Pra você: ' + esc(c[1]) + '. Ver o porquê">' + c[0] + '</button>';
+  }
   function seloPT(g) {
-    if (g.pt === 2) return '<span class="selo dub">Dublado PT-BR</span>';
-    if (g.pt === 1) return '<span class="selo pt">PT-BR</span>';
-    if (g.pp) return '<span class="selo" title="Tem português de Portugal">PT-PT</span>';
+    if (g.pt === 2) return '<span class="selo dub" title="Dublado em português do Brasil">🎙 PT-BR</span>';
+    if (g.pt === 1) return '<span class="selo pt" title="Interface e legendas em português do Brasil">💬 PT-BR</span>';
+    if (g.pp) return '<span class="selo pp" title="Só português de Portugal">PT-PT</span>';
     return '';
   }
   function seloNota(g) {
     if (g.r == null) return '';
-    var c = g.r >= 80 ? 'nota-a' : g.r >= 60 ? 'nota-m' : 'nota-b';
-    return '<span class="selo ' + c + '" title="' + g.r + '% de avaliações positivas' + (g.rv ? ' (' + fmtN.format(g.rv) + ')' : '') + '">' + g.r + '%</span>';
+    var t = g.r + '% de análises positivas' + (g.rv ? ' (' + fmtN.format(g.rv) + ')' : '');
+    return g.r < 60 ? '<span class="selo nota baixa" title="' + t + '">👎 ' + g.r + '</span>' : '<span class="selo nota" title="' + t + '">★ ' + g.r + '</span>';
   }
-  function seloDeck(g) {
-    if (g.dk === 3) return '<span class="selo dk" title="Verificado no Steam Deck: boa dica de que roda em máquina fraca"><b>Deck</b> verificado</span>';
-    if (g.dk === 2) return '<span class="selo dk" title="Jogável no Steam Deck"><b>Deck</b> jogável</span>';
+  // romance em níveis (rk), como na Estante do Switch: na capa só ♥ (central ou dá pra namorar) e "? romance"
+  var ROM_TXT = { sim: 'Romance central', opc: 'Dá pra namorar', leve: 'Romance de fundo', nc: 'Romance não conferido' };
+  function seloRom(g) {
+    var r = g.rk || (g.rom ? 'opc' : '');
+    if (r === 'sim' || r === 'opc') return '<span class="selo rom" title="' + ROM_TXT[r] + '">♥</span>';
+    if (r === 'nc') return '<span class="selo nc" title="Romance não conferido">? romance</span>';
     return '';
   }
   function seloPlano(g) {
     var pl = M.plano[g.i];
-    if (pl === 'quero') return '<span class="selo plano">Quero jogar</span>';
-    if (pl === 'joguei') return '<span class="selo plano">Já joguei</span>';
+    if (pl === 'quero') return '<span class="selo plano">▶ Quero jogar</span>';
+    if (pl === 'joguei') return '<span class="selo plano">✓ Já joguei</span>';
     if (pl === 'nao') return '<span class="selo veto">Dispensado</span>';
     return '';
   }
-  // romance em níveis (rk), como na Estante do Switch; sem rk, vale o rom antigo
-  var ROM_NIVEL = {
-    sim: ['rom', '♥ Romance central'], opc: ['rom', '♥ Dá pra namorar'],
-    leve: ['rom leve', '♡ Romance de fundo'], nc: ['rom-nc', '? romance']
-  };
-  function seloRom(g) {
-    var r = ROM_NIVEL[g.rk];
-    if (r) return '<span class="selo ' + r[0] + '"' + (g.rk === 'nc' ? ' title="Romance não conferido"' : '') + '>' + r[1] + '</span>';
-    return g.rom ? '<span class="selo rom">♥ Romance</span>' : '';
+  function selosCard(g) {
+    return (g.ad ? '<span class="selo ad" title="Conteúdo adulto (+18)">🔞 +18</span>' : '') + (ehJoia(g) ? '<span class="selo joia" title="Joia escondida: nota altíssima e pouca gente conhece">💎 Joia</span>' : '') +
+      seloGosto(g) + seloLoja(g) + seloPT(g) + seloEsforco(g) + seloNota(g) + seloRom(g) + selosNivel(g) +
+      (g.sw === 'fav' ? '<span class="selo sw" title="Você deu estrela a este jogo na Estante do Switch">★ Switch</span>' : '') +
+      (g._vet ? '<span class="selo veto" title="' + (g.x === 'ot' ? 'Protagonista mulher que namora homens (otome)' : 'Romance só do mesmo sexo') + '">Vetado</span>' : '') +
+      seloPlano(g);
   }
-  function textoRom(g) {
-    var r = ROM_NIVEL[g.rk];
-    if (g.rk === 'nc') return 'Não conferido';
-    return r ? r[1].slice(2) : g.rom ? 'Tem romance' : '';
-  }
-  // 🟢🟡🔴 do perfil de gostos (nv) com a nota pv
-  var GOSTO = { sim: ['🟢', 'Acho que você vai gostar'], talvez: ['🟡', 'Talvez'], nao: ['🔴', 'Acho que não'] };
-  function seloGosto(g) {
-    var x = GOSTO[g.nv];
-    if (!x && g.pv == null) return '';
-    return '<span class="selo gosto" title="' + esc(x ? x[1] : 'Combina com você') + '">' + (x ? x[0] + ' ' : '🎯 ') + (g.pv != null ? g.pv : '') + '</span>';
-  }
-  function selosTodos(g, comGosto) {
-    return (comGosto ? seloGosto(g) : '') + selosNivel(g) + seloPT(g) + seloNota(g) + seloDeck(g) + seloRom(g) +
-      (g.sw === 'fav' ? '<span class="selo plano" title="Você deu estrela a este jogo na Estante do Switch">★ no Switch</span>' : '') +
-      (g._vet ? '<span class="selo veto" title="' + (g.x === 'ot' ? 'Otome' : 'Romance só do mesmo sexo') + '">Vetado</span>' : '') +
-      (g.ad ? '<span class="selo ad">+18</span>' : '') +
-      (g.on ? '<span class="selo">Só on-line</span>' : '') +
-      (g.nw ? '<span class="selo">Sem Windows</span>' : '') + seloPlano(g);
-  }
-  function metaTxt(g) {
-    var p = [];
-    if (g.s != null) p.push('<span title="Espaço em disco">' + gb(g.s) + '</span>');
-    if (g.a) p.push('<span>' + g.a + '</span>');
-    return p.join('');
-  }
-  function imgCapa(g, classe, pequena) {
+  function imgCapa(g, classe) {
     if (!g.c) return '';
-    var o = BASE + esc(g.c);
-    return '<img class="' + classe + '" loading="lazy" decoding="async" width="460" height="215" alt="Capa de ' + esc(g.n) + '" src="' +
-      o + '">';
+    return '<img class="' + classe + '" loading="lazy" decoding="async" width="460" height="215" alt="" src="' + esc(urlCapa(g.c)) + '"' + (g._ext ? ' referrerpolicy="no-referrer"' : '') + '>';
   }
-  // a frase "por que é a sua cara" vem na ficha (pq); aceita também no jogo, se um dia vier
+  // a frase "por que é a sua cara" vem na ficha (pq)
   function pqDe(g) { return g.pq || (FICHAS[g.i] && FICHAS[g.i].pq) || ''; }
   function cardHTML(g, comPq) {
     var id = g.i, nome = esc(g.n);
     return '<article class="card' + (M.inst[id] ? ' sel' : '') + (M.plano[id] === 'nao' ? ' dispensado' : '') + '" data-id="' + id + '">' +
-      '<div class="capa-box" style="--gc:' + (COR_GEN[g.g] || COR_GEN.outro) + '">' +
-        '<button type="button" class="capa-hit" data-acao="inst" aria-pressed="' + !!M.inst[id] + '" aria-label="Quero instalar: ' + nome + '">' +
-          '<span class="capa-sem" aria-hidden="true">' + nome + '</span>' + imgCapa(g, 'capa', true) +
-          '<span class="capa-check" aria-hidden="true">✓</span>' +
-        '</button>' +
-        '<button type="button" class="fav" data-acao="int" aria-pressed="' + !!M.int[id] + '" aria-label="Tenho interesse: ' + nome + '" title="Tenho interesse"><span aria-hidden="true">' + (M.int[id] ? '★' : '☆') + '</span></button>' +
-        (g.em_breve ? '<span class="capa-flag">Em breve</span>' : '') +
+      '<div class="capa" style="--gc:' + (COR_GEN[g.g] || '#3a4a6b') + '">' + (g.ad ? '<span class="capa-18" title="Conteúdo adulto">🔞 +18</span>' : '') +
+        '<button type="button" class="capa-hit" data-acao="ver" aria-label="Ver o jogo: ' + nome + '"><span class="capa-sem" aria-hidden="true">' + nome + '</span>' + imgCapa(g, 'ci') + '</button>' +
+        '<button type="button" class="fav" data-acao="int" aria-pressed="' + !!M.int[id] + '" aria-label="Tenho interesse: ' + nome + '" title="Tenho interesse">' + (M.int[id] ? '★' : '☆') + '</button>' +
+        '<button type="button" class="inst" data-acao="inst" aria-pressed="' + !!M.inst[id] + '" aria-label="Quero instalar: ' + nome + '" title="Quero instalar (entra na conta do disco)">💾</button>' +
       '</div>' +
-      '<div class="card-corpo">' +
-        '<h3 class="nome">' + nome + '</h3>' +
-        '<div class="selos">' + selosTodos(g, comPq) + '</div>' +
-        (comPq && pqDe(g) ? '<p class="pq">' + esc(pqDe(g)) + '</p>' : '') +
-        '<div class="meta">' + metaTxt(g) + '</div>' +
-        '<button type="button" class="ver" data-acao="ver">Ver o jogo</button>' +
-      '</div></article>';
+      '<div class="selos">' + selosCard(g) + '</div>' +
+      '<h3 class="nome" data-acao="ver">' + nome + '</h3>' +
+      (comPq && pqDe(g) ? '<p class="pq">' + esc(pqDe(g)) + '</p>' : '') +
+      '</article>';
   }
   function atualizarCardsDom(id) {
     var g = POR_ID[id];
     if (!g) return;
-    cada('#conteudo .card[data-id="' + g.i + '"]', function (el) { el.outerHTML = cardHTML(g, !!el.querySelector('.pq')); });
+    cada('#conteudo .card[data-id="' + g.i + '"], #ficha .card[data-id="' + g.i + '"]', function (el) { el.outerHTML = cardHTML(g, !!el.querySelector('.pq')); });
   }
 
   // ---------------- desenho: catálogo ou grade ----------------
   function desenhar(manter) {
     BASE_ATUAL = filtrar(null);
     ordenar(BASE_ATUAL.lista, null);
-    atualizarTiles(BASE_ATUAL.cont);
-    montarGens();
     var cat = V.modo === 'catalogo';
     $('catalogo').hidden = !cat;
     $('grade-sec').hidden = cat;
+    $('b-voltar').hidden = cat;
+    $('b-todos').hidden = !cat;
+    $('atalhos').hidden = !cat; $('pc-expl').hidden = !cat; $('mostrando').hidden = !cat;
     var r = cat ? BASE_ATUAL : desenharGrade(manter);
     if (cat) desenharCatalogo();
-    var t = 'Mostrando <strong>' + fmtN.format(r.lista.length) + '</strong> de ' + fmtN.format(JOGOS.length) + ' jogos';
-    if (r.escondidos) t += ' · ' + fmtN.format(r.escondidos) + ' que não rodam escondidos';
+    var t = cat ? '<strong>' + jogosTxt(r.lista.length) + '</strong> com os filtros de agora' : 'Mostrando <strong>' + fmtN.format(r.lista.length) + '</strong> de ' + fmtN.format(JOGOS.length) + ' jogos';
+    if (r.escondidos) t += ' · ' + fmtN.format(r.escondidos) + ' que não rodam ficam escondidos';
     if (fila.length) t += ' · carregando…';
     $('mostrando').innerHTML = t;
+    $('b-todos').innerHTML = 'Ver todos os ' + jogosTxt(BASE_ATUAL.lista.length) + ' <span aria-hidden="true">›</span>';
     montarAtivos();
     atualizarAbas();
   }
-  function secaoHTML(id, tit, dsc, lista, fonteTxt, comPq) {
-    return '<section class="sec-cat" id="' + id + '" aria-labelledby="' + id + '-t">' +
-      '<div class="sec-cab"><h2 id="' + id + '-t">' + esc(tit) + '</h2><span class="count">' + fmtN.format(lista.length) + '</span>' + (dsc ? '<p>' + esc(dsc) + '</p>' : '') + '</div>' +
-      '<div class="grid">' + lista.slice(0, POR_SECAO).map(function (g) { return cardHTML(g, comPq); }).join('') + '</div>' +
-      '<button type="button" class="ver-todos" data-ver="' + fonteTxt + '">Ver todos (' + fmtN.format(lista.length) + ') →</button>' +
-      '</section>';
+  function cabSecao(id, tit, n, fonteTxt, svg, ico) {
+    return '<div class="sec-cab"><h2 id="' + id + '-t"><button type="button" data-ver="' + fonteTxt + '">' + (svg || (ico ? '<span aria-hidden="true">' + ico + '</span>' : '')) + esc(tit) + '</button>' +
+      (n != null ? ' <span class="n">' + jogosTxt(n) + '</span>' : '') + '</h2>' +
+      (fonteTxt ? '<button type="button" class="vt" data-ver="' + fonteTxt + '">Ver tudo ›</button>' : '') + '</div>';
+  }
+  function secaoHTML(s, lista) {
+    var id = 'sec-' + s.k, fonte = s.gen ? 'gen:' + s.gen : 'sec:' + s.k;
+    LISTAS[id] = lista;
+    return '<section class="sec" id="' + id + '" data-lista="' + id + '" aria-labelledby="' + id + '-t">' +
+      cabSecao(id, titSecao(s), lista.length, fonte, s.gen ? genSvg(s.gen) : '', s.ico) +
+      (s.dsc ? '<p class="sec-dsc">' + esc(s.dsc) + '</p>' : '') +
+      '<div class="grid">' + lista.slice(0, POR_SECAO).map(function (g) { return cardHTML(g, false); }).join('') + '</div></section>';
+  }
+  var gensAberto = false;
+  function generosHTML(base) {
+    var cont = {};
+    base.forEach(function (g) { cont[g.g] = (cont[g.g] || 0) + 1; });
+    var h = GEN_ORDER.map(function (k) {
+      return '<button type="button" class="gen-t' + (k === 'rpgnicho' ? ' nicho' : '') + '" data-gen="' + k + '">' + genSvg(k) + '<b>' + esc(genNome(k)) + '</b><small>' + jogosTxt(cont[k] || 0) + '</small></button>';
+    }).join('');
+    return '<section class="sec" id="sec-generos" aria-labelledby="sec-generos-t"><div class="sec-cab"><h2 id="sec-generos-t"><span aria-hidden="true">🎮</span>Gêneros <span class="n">' + GEN_ORDER.length + ' gêneros</span></h2></div>' +
+      '<div class="gens' + (gensAberto ? '' : ' fechado') + '" id="gens">' + h + '</div>' +
+      '<button type="button" class="gens-mais" id="gens-mais" aria-controls="gens" aria-expanded="' + gensAberto + '">' + (gensAberto ? 'Menos gêneros ▴' : 'Ver os ' + GEN_ORDER.length + ' gêneros ▾') + '</button></section>';
+  }
+  function niveisHTML(cont) {
+    var h = [4, 3, 2, 1, 0].map(function (n) {
+      var dsc = n === 1 ? (F.roda ? 'Aparecendo na lista' : NIVEL[1].dsc) : NIVEL[n].dsc;
+      return '<button type="button" class="nv-t n' + n + '" data-nv="' + n + '" aria-pressed="false"><span class="num">' + fmtN.format(cont[n]) + '</span><span class="lbl">' + NIVEL[n].nome + '</span><span class="dsc">' + dsc + '</span></button>';
+    }).join('');
+    return '<section class="sec" id="sec-niveis" aria-labelledby="sec-niveis-t"><div class="sec-cab"><h2 id="sec-niveis-t"><span aria-hidden="true">💻</span>' +
+      (F.pc === 'dois' ? 'Desempenho nos seus PCs' : 'Desempenho ' + esc(noPC(F.pc))) + '</h2></div>' +
+      '<p class="sec-dsc">' + (F.pc === 'dois' ? 'Vale o melhor dos dois PCs.' : 'Só o ' + esc(PCS[F.pc].nome) + '.') + ' Toque para ver a lista.</p><div class="niveis">' + h + '</div></section>';
   }
   function desenharCatalogo() {
     var base = BASE_ATUAL.lista, h = [];
+    LISTAS = {};
     if (!JOGOS.length) { $('catalogo').innerHTML = '<p class="empty">Abrindo o catálogo…</p>'; return; }
     SECOES.forEach(function (s) {
+      if (s.k === 'GENEROS') { h.push(generosHTML(base)); return; }
+      if (s.k === 'NIVEIS') { h.push(niveisHTML(BASE_ATUAL.cont)); return; }
+      if (s.k === 'MROM') { h.push(mromHTML(base)); return; }
+      if (s.k === 'LISTAS') { h.push(listasHTML()); return; }
+      if (s.so) return;
       var l = base.filter(s.f);
       if (F.ordem === ORDEM_PADRAO && s.ord) l.sort(s.ord);
-      if (l.length) h.push(secaoHTML('sec-' + s.k, titSecao(s), s.dsc, l, 'sec:' + s.k, !!s.pq));
+      if (l.length) h.push(secaoHTML(s, l));
     });
-    porGenero(base).forEach(function (x) {
-      h.push(secaoHTML('gen-' + x.k, (CONF.gen || {})[x.k] || x.k, '', x.lista, 'gen:' + x.k));
-    });
-    $('catalogo').innerHTML = h.length ? h.join('') : '<div class="empty"><p>Nenhum jogo com esses filtros.</p><button type="button" class="limpar" data-limpar="1">Limpar filtros</button></div>';
+    $('catalogo').innerHTML = h.join('') || '<div class="empty"><p>Nenhum jogo com esses filtros.</p><button type="button" class="btn btn-forte" data-limpar="1">Limpar filtros</button></div>';
   }
   function porGenero(base) {
     var b = {};
     base.forEach(function (g) { (b[g.g] = b[g.g] || []).push(g); });
-    return Object.keys(b).map(function (k) { return { k: k, lista: b[k] }; }).sort(function (x, y) { return y.lista.length - x.lista.length || colar.compare(x.k, y.k); });
+    return GEN_ORDER.filter(function (k) { return b[k]; }).map(function (k) { return { k: k, lista: b[k] }; });
   }
   function titFonte(fo) {
     if (fo.t === 'sec') return titSecao(SEC_K[fo.k]);
-    if (fo.t === 'gen') return (CONF.gen || {})[fo.k] || fo.k;
+    if (fo.t === 'gen') return genNome(fo.k);
     if (fo.t === 'nivel') return NIVEL[fo.k].nome + (F.pc === 'dois' ? ' (no melhor dos dois PCs)' : ' ' + noPC(F.pc));
     if (fo.t === 'aba') { var a = ABAS.filter(function (x) { return x[0] === fo.k; })[0]; return a ? a[1].replace(/^[^\wÀ-ú]+ /, '') : 'Marcações'; }
     if (fo.t === 'busca') return 'Busca: “' + F.qTxt + '”';
+    if (fo.t === 'todos') return 'Todos os jogos';
+    if (fo.t === 'lista') { var l = listaPorId(fo.k); return l ? l.nome : 'Lista'; }
+    if (fo.t === 'mrom') { var pr = MROM_PARTES.filter(function (x) { return x[0] === fo.k; })[0]; return 'Melhores romances: ' + (pr ? pr[1].slice(2) : ''); }
     return '';
+  }
+  function icoFonte(fo) {
+    if (fo.t === 'gen') return genSvg(fo.k);
+    if (fo.t === 'sec' && SEC_K[fo.k].ico) return '<span aria-hidden="true">' + SEC_K[fo.k].ico + '</span>';
+    return '';
+  }
+  function dscFonte(fo) {
+    if (fo.t === 'sec') return SEC_K[fo.k].dsc || '';
+    if (fo.t === 'gen') return GEN_DESC[fo.k] || '';
+    if (fo.t === 'nivel') return NIVEL[fo.k].dsc.replace(/^Escondidos.*/, 'Pelos requisitos, não roda.');
+    return '';
+  }
+  function montarOrdem() {
+    $('ordem').innerHTML = '<span class="rot">Ordem:</span>' + ['pv', 'nota', 'pop', 'novos', 'nome', 'disco', 'trad'].filter(function (k) { return (k !== 'pv' || TEM_PV) && (k !== 'trad' || TEM_EF); }).map(function (k) {
+      var rot = k === ORDEM_PADRAO && V.fonte && (V.fonte.t === 'lista' || V.fonte.t === 'mrom') ? '# Ordem da lista' : NOMES_ORDEM[k];
+      return '<button type="button" data-ordem="' + k + '" aria-pressed="' + (F.ordem === k) + '">' + rot + '</button>';
+    }).join('');
   }
   function desenharGrade(manter) {
     var r = filtrar(V.fonte);
@@ -445,15 +613,18 @@
     grid.innerHTML = ATUAL.slice(0, qtd).map(cardGrade).join('');
     MOSTRADOS = qtd;
     atualizarMais();
-    $('grade-tit').textContent = titFonte(V.fonte);
-    $('grade-n').textContent = fmtN.format(ATUAL.length) + (ATUAL.length === 1 ? ' jogo' : ' jogos');
-    var d = V.fonte.t === 'sec' ? SEC_K[V.fonte.k].dsc : '';
-    if (r.escondidos && V.fonte.t !== 'nivel') d += (d ? ' ' : '') + fmtN.format(r.escondidos) + ' que não rodam estão escondidos (tile "Não roda" ou "Mais filtros" para ver).';
-    $('grade-dsc').textContent = d;
+    $('grade-tit').innerHTML = icoFonte(V.fonte) + esc(titFonte(V.fonte));
+    $('grade-n').textContent = jogosTxt(ATUAL.length);
+    var d = dscFonte(V.fonte);
+    if (r.escondidos && V.fonte.t !== 'nivel') d += (d ? ' ' : '') + fmtN.format(r.escondidos) + ' que não rodam estão escondidos (Filtros → Roda no PC).';
+    $('grade-dsc').textContent = d ? '· ' + d : '';
+    montarOrdem();
     $('vazio').hidden = ATUAL.length > 0 || !JOGOS.length;
+    var lf = V.fonte.t === 'lista' && listaPorId(V.fonte.k);
+    $('grade-extra').innerHTML = lf ? extraLista(lf) : '';
     return r;
   }
-  function cardGrade(g) { return cardHTML(g, V.fonte && V.fonte.t === 'sec' && SEC_K[V.fonte.k].pq); }
+  function cardGrade(g) { return cardHTML(g, V.fonte && V.fonte.t === 'sec' && V.fonte.k === 'para'); }
   function atualizarMais() {
     var falta = ATUAL.length - MOSTRADOS, b = $('mais');
     b.hidden = falta <= 0;
@@ -465,14 +636,20 @@
     MOSTRADOS = fim;
     atualizarMais();
   }
+  // "carregar mais" sozinho ao chegar perto do fim (como no catálogo do Switch); o botão continua para quem preferir
+  if (window.IntersectionObserver) {
+    new IntersectionObserver(function (ents) {
+      ents.forEach(function (e) { if (e.isIntersecting && V.modo === 'grade' && !$('mais').hidden) mostrarMais(); });
+    }, { rootMargin: '600px 0px' }).observe($('mais'));
+  }
   // redesenha o catálogo sem a tela pular: mantém a seção que estava no alto no mesmo lugar
   function comAncora(fn) {
-    var topo = topoH(), anc = null, off = 0;
+    var anc = null, off = 0;
     if (window.scrollY > 0) {
-      var secs = document.querySelectorAll('#catalogo .sec-cat');
+      var secs = document.querySelectorAll('#catalogo .sec');
       for (var i = 0; i < secs.length; i++) {
         var r = secs[i].getBoundingClientRect();
-        if (r.bottom > topo) { anc = secs[i].id; off = r.top; break; }
+        if (r.bottom > 0) { anc = secs[i].id; off = r.top; break; }
       }
     }
     fn();
@@ -480,19 +657,16 @@
   }
 
   // ---------------- navegação: grade, catálogo e gêneros ----------------
-  // 26/11: a barra do topo não acompanha mais a rolagem (pedido do usuário); só conta a altura dela se voltar a ser fixa
-  function topoH() { var b = $('barra-topo'), p = getComputedStyle(b).position; return p === 'sticky' || p === 'fixed' ? b.getBoundingClientRect().height : 0; }
   function rolarPara(el) {
     if (!el) return;
     el.scrollIntoView({ block: 'start' });
-    // as seções de cima podem mudar de altura ao aparecer: confere de novo
     requestAnimationFrame(function () { requestAnimationFrame(function () { el.scrollIntoView({ block: 'start' }); }); });
   }
   function abrirGrade(fo) {
     if (V.modo === 'catalogo') { V.scrollCat = window.scrollY; V.modo = 'grade'; empurrar('grade'); }
     V.fonte = fo; V.fonteAntes = null;
     desenhar(false);
-    rolarPara($('grade-cab'));
+    rolarPara($('barra-topo'));
   }
   function voltarCatalogoDom() {
     V.modo = 'catalogo'; V.fonte = null; V.fonteAntes = null;
@@ -501,32 +675,28 @@
     if (V.irDepois) { var id = V.irDepois; V.irDepois = null; rolarPara($(id)); }
     else window.scrollTo(0, V.scrollCat || 0);
   }
-  function irGenero(k) {
-    if (V.modo === 'grade') { V.irDepois = 'gen-' + k; fecharCamada('grade'); return; }
-    rolarPara($('gen-' + k));
-  }
-  function montarGens() {
-    var gs = porGenero(BASE_ATUAL.lista);
-    var h = '<button type="button" class="chip" data-gen="" aria-pressed="' + (V.modo === 'catalogo') + '">📚 Catálogo</button>';
-    h += gs.map(function (x) {
-      var on = V.modo === 'grade' && V.fonte && V.fonte.t === 'gen' && V.fonte.k === x.k;
-      return '<button type="button" class="chip" data-gen="' + esc(x.k) + '" aria-pressed="' + on + '">' + esc((CONF.gen || {})[x.k] || x.k) + ' <span class="n">' + fmtN.format(x.lista.length) + '</span></button>';
-    }).join('');
-    var box = $('gens'), sl = box.scrollLeft;
-    box.innerHTML = h;
-    box.scrollLeft = sl;
-  }
 
-  // ---------------- filtros ativos ----------------
+  // ---------------- filtros ativos (chips; tocar tira) ----------------
+  var ROM_FILTRO = { namorar: '♥ Com romance', opc: '♥ Dá pra namorar', sim: '♥ Romance central', qualquer: '♡ Qualquer romance', sem: 'Sem romance' };
+  var RODA_FILTRO = { todos: 'Mostrando os que não rodam', liso: 'Só os que rodam liso', roda: 'Só os que rodam', limite: 'Só no limite', nao: 'Só os que não rodam', sem: 'Só sem dados' };
+  var TAM_FILTRO = { ate2: 'Até 2 GB', '2a5': '2 a 5 GB', '5a10': '5 a 10 GB', '10a20': '10 a 20 GB', mais20: 'Mais de 20 GB', cabe: 'Cabe no disco livre' };
+  var MEUS_FILTRO = { int: '★ Com interesse', inst: '💾 Para instalar', quero: '▶ Quero jogar', joia: '💎 Só joias escondidas' };
   function ativosLista() {
     var a = [];
     if (F.q.length) a.push(['q', 'Busca: “' + F.qTxt + '”']);
+    if (F.cor.length && F.cor.length < 3) a.push(['cor', F.cor.map(function (c) { return COR[c][0] + ' ' + COR[c][2]; }).join(' + ')]);
     if (F.idioma) a.push(['idioma', { com: 'Com PT-BR', dub: 'Dublado em PT-BR', sem: 'Sem PT-BR' }[F.idioma]]);
-    if (F.ordem !== ORDEM_PADRAO) a.push(['ordem', 'Ordem: ' + NOMES_ORDEM[F.ordem]]);
-    if (F.rom) a.push(['rom', 'Só com romance']);
+    if (F.rom) a.push(['rom', ROM_FILTRO[F.rom]]);
+    if (F.gen) a.push(['gen', genNome(F.gen)]);
+    F.et.forEach(function (c) { a.push(['et:' + c, ETIQ[c] ? ETIQ[c][0] : c]); });
+    if (F.roda) a.push(['roda', RODA_FILTRO[F.roda]]);
+    if (F.nota) a.push(['nota', 'Nota ' + F.nota + '% ou mais']);
+    if (F.tam) a.push(['tam', TAM_FILTRO[F.tam]]);
+    if (F.meus) a.push(['meus', MEUS_FILTRO[F.meus]]);
+    if (F.ordem !== ORDEM_PADRAO && V.modo === 'catalogo') a.push(['ordem', 'Ordem: ' + NOMES_ORDEM[F.ordem]]);
     if (F.ctrl) a.push(['ctrl', 'Só com controle']);
-    if (F.naoRoda) a.push(['naoRoda', 'Mostrando os que não rodam']);
-    if (!F.esc18) a.push(['esc18', 'Mostrando +18']);
+    if (F.facil) a.push(['facil', '✍️ Fácil de traduzir']);
+    if (F.esc18) a.push(['esc18', 'Escondendo +18']);
     if (!F.escVet) a.push(['escVet', 'Mostrando vetados']);
     return a;
   }
@@ -534,32 +704,26 @@
     var a = ativosLista(), box = $('ativos');
     box.hidden = !a.length;
     box.innerHTML = a.map(function (x) {
-      return '<button type="button" class="at-chip" data-tirar="' + x[0] + '" aria-label="Tirar o filtro: ' + esc(x[1]) + '">' + esc(x[1]) + ' <b aria-hidden="true">✕</b></button>';
-    }).join('') + (a.length ? '<button type="button" class="at-limpar" data-limpar="1">Limpar tudo</button>' : '');
-    var n = a.filter(function (x) { return x[0] !== 'q'; }).length;
+      return '<button type="button" class="at-chip" data-tirar="' + esc(x[0]) + '" aria-label="Tirar o filtro: ' + esc(x[1]) + '">' + esc(x[1]) + ' <b aria-hidden="true">✕</b></button>';
+    }).join('') + (a.length > 1 ? '<button type="button" class="at-limpar" data-limpar="1">Limpar tudo</button>' : '');
+    var n = a.filter(function (x) { return x[0] !== 'q' && x[0] !== 'ordem'; }).length;
     $('filtros-n').textContent = n || '';
-  }
-  function sincronizarCampos() {
-    $('f-idioma').value = F.idioma; $('f-ordem').value = F.ordem;
-    $('f-idioma').classList.toggle('ativo', !!F.idioma); $('f-ordem').classList.toggle('ativo', F.ordem !== ORDEM_PADRAO);
-    $('c-rom').checked = F.rom; $('c-ctrl').checked = F.ctrl;
-    $('c-nao').checked = F.naoRoda; $('c-18').checked = F.esc18; $('c-vet').checked = F.escVet;
   }
   function tirarFiltro(k) {
     if (k === 'q') { $('q').value = ''; aplicarBusca(''); return; }
+    if (k.indexOf('et:') === 0) { var c = k.slice(3); F.et = F.et.filter(function (x) { return x !== c; }); redesenharFiltros(); return; }
     var p = filtrosPadrao();
     F[k] = p[k];
-    sincronizarCampos();
     redesenharFiltros();
   }
   function limpar() {
     var p = filtrosPadrao();
-    ['idioma', 'ordem', 'rom', 'esc18', 'escVet', 'naoRoda', 'ctrl'].forEach(function (k) { F[k] = p[k]; });
-    sincronizarCampos();
+    ['idioma', 'ordem', 'rom', 'esc18', 'escVet', 'roda', 'ctrl', 'cor', 'gen', 'et', 'nota', 'tam', 'meus', 'facil'].forEach(function (k) { F[k] = p[k]; });
     if (F.q.length) { $('q').value = ''; aplicarBusca(''); } else redesenharFiltros();
   }
   function redesenharFiltros() {
     if (V.modo === 'catalogo') comAncora(function () { desenhar(false); }); else desenhar(false);
+    if (folha.open) pintarFolha();
   }
 
   // ---------------- busca ----------------
@@ -568,7 +732,7 @@
     F.q = norm(txt).split(/\s+/).filter(Boolean);
     if (F.q.length) {
       if (V.modo === 'catalogo') { abrirGrade({ t: 'busca' }); return; }
-      if (V.fonte.t !== 'busca') { V.fonteAntes = V.fonte; V.fonte = { t: 'busca' }; desenhar(false); rolarPara($('grade-cab')); return; }
+      if (V.fonte.t !== 'busca') { V.fonteAntes = V.fonte; V.fonte = { t: 'busca' }; desenhar(false); return; }
       desenhar(false);
       return;
     }
@@ -583,23 +747,107 @@
   $('q').addEventListener('input', function () {
     clearTimeout(timerBusca);
     var v = this.value;
-    timerBusca = setTimeout(function () { aplicarBusca(v); }, 200);
+    timerBusca = setTimeout(function () { aplicarBusca(v); }, 250);
   });
   $('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { clearTimeout(timerBusca); aplicarBusca(this.value); this.blur(); } });
 
-  // ---------------- tiles, marcações, cabeçalho ----------------
-  function atualizarTiles(cont) {
-    cada('.tile', function (b) {
-      var n = +b.dataset.nv;
-      b.querySelector('.num').textContent = fmtN.format(cont[n]);
-      b.setAttribute('aria-pressed', String(V.modo === 'grade' && V.fonte && V.fonte.t === 'nivel' && V.fonte.k === n));
-      if (n === 1) {
-        var esc1 = !F.naoRoda;
-        b.classList.toggle('escondido', esc1);
-        b.querySelector('.dsc').textContent = esc1 ? 'Escondidos: toque para ver' : 'Aparecendo na lista';
-      }
-    });
+  // ---------------- folha de filtros (copiada do mod_L_navegar do Switch) ----------------
+  var folha = $('folha');
+  function contagem(ign, chave) {
+    var r = filtrar(V.modo === 'grade' ? V.fonte : null, ign), c = {};
+    r.lista.forEach(function (g) { var ks = chave(g); (Array.isArray(ks) ? ks : [ks]).forEach(function (k) { c[k] = (c[k] || 0) + 1; }); });
+    return { c: c, total: r.lista.length };
   }
+  function pilula(grupo, val, txt, on, n) {
+    return '<button type="button" data-fg="' + grupo + '" data-fv="' + esc(val) + '" aria-pressed="' + !!on + '"' + (n === 0 && !on ? ' class="zero"' : '') + '>' + txt +
+      (n != null ? ' <span class="n">' + fmtN.format(n) + '</span>' : '') + '</button>';
+  }
+  function secFolha(tit, dica, corpo) {
+    return '<div class="fo-sec"><h3>' + tit + (dica ? ' <small>(' + dica + ')</small>' : '') + '</h3>' + corpo + '</div>';
+  }
+  function pintarFolha() {
+    var h = [], c;
+    if (TEM_PV) {
+      c = contagem('cor', corDe);
+      h.push(secFolha('Pra você', 'as bolinhas das capas; dá pra escolher mais de uma', '<div class="pills">' + CORES.map(function (k) {
+        return pilula('cor', k, COR[k][0] + ' ' + COR[k][2], F.cor.indexOf(k) >= 0, c.c[k] || 0);
+      }).join('') + '</div>'));
+    }
+    c = contagem('idioma', function (g) { return g.pt === 2 ? ['com', 'dub'] : g.pt === 1 ? ['com'] : ['sem']; });
+    h.push(secFolha('Português', '', '<div class="pills">' + pilula('idioma', '', 'Tanto faz', !F.idioma) +
+      pilula('idioma', 'com', 'Com PT-BR', F.idioma === 'com', c.c.com || 0) + pilula('idioma', 'dub', '🎙 Dublado', F.idioma === 'dub', c.c.dub || 0) +
+      pilula('idioma', 'sem', 'Sem português', F.idioma === 'sem', c.c.sem || 0) +
+      (TEM_EF ? pilula('facil', '1', '✍️ Fácil de traduzir', F.facil, JOGOS.filter(function (g) { return !g.pt && g.efd === 'facil'; }).length) : '') + '</div>'));
+    c = contagem('rom', function (g) { return ['namorar', 'opc', 'sim', 'qualquer', 'sem'].filter(function (k) { return romOk(g, k); }); });
+    h.push(secFolha('Romance', '', '<div class="pills">' + pilula('rom', '', 'Tanto faz', !F.rom) + ['namorar', 'opc', 'sim', 'qualquer', 'sem'].map(function (k) {
+      return pilula('rom', k, ROM_FILTRO[k], F.rom === k, c.c[k] || 0);
+    }).join('') + '</div>'));
+    c = contagem('gen', function (g) { return g.g; });
+    h.push(secFolha('Gênero', '', '<div class="pills">' + pilula('gen', '', 'Todos', !F.gen, c.total) + GEN_ORDER.map(function (k) {
+      return pilula('gen', k, esc(genNome(k)), F.gen === k, c.c[k] || 0);
+    }).join('') + '</div>'));
+    c = contagem('et', function (g) { return g._et; });
+    var porG = {};
+    Object.keys(ETIQ).forEach(function (k) { (porG[ETIQ[k][1]] = porG[ETIQ[k][1]] || []).push(k); });
+    h.push(secFolha('Etiquetas', 'o jogo precisa ter todas as que você escolher', Object.keys(ETIQ_GRUPOS).map(function (gr) {
+      return '<h4>' + ETIQ_GRUPOS[gr] + '</h4><div class="pills">' + (porG[gr] || []).map(function (k) {
+        return pilula('et', k, esc(ETIQ[k][0]), F.et.indexOf(k) >= 0, c.c[k] || 0);
+      }).join('') + '</div>';
+    }).join('')));
+    c = contagem('roda', function (g) { var n = nv(g); return [n === 4 ? 'liso' : '', n >= 3 ? 'roda' : '', n === 2 ? 'limite' : '', n === 1 ? 'nao' : '', n === 0 ? 'sem' : '', 'todos'].filter(Boolean); });
+    h.push(secFolha('Roda no PC', F.pc === 'dois' ? 'no melhor dos dois' : esc(PCS[F.pc].nome), '<div class="pills">' + pilula('roda', '', 'Esconder os que não rodam', !F.roda) +
+      ['roda', 'liso', 'limite', 'nao', 'sem', 'todos'].map(function (k) {
+        return pilula('roda', k, { roda: 'Roda', liso: 'Roda liso', limite: 'No limite', nao: 'Não roda', sem: 'Sem dados', todos: 'Mostrar todos' }[k], F.roda === k, c.c[k] || 0);
+      }).join('') + '</div>'));
+    h.push(secFolha('Nota dos jogadores', '% de análises positivas na Steam', '<div class="pills">' + pilula('nota', '0', 'Tanto faz', !F.nota) +
+      [70, 80, 90].map(function (k) { return pilula('nota', String(k), k + '% ou mais', F.nota === k); }).join('') + '</div>'));
+    h.push(secFolha('Tamanho no disco', '', '<div class="pills">' + pilula('tam', '', 'Tanto faz', !F.tam) +
+      Object.keys(TAM_FILTRO).map(function (k) { return pilula('tam', k, TAM_FILTRO[k], F.tam === k); }).join('') + '</div>'));
+    h.push(secFolha('Só os meus', '', '<div class="pills">' + pilula('meus', '', 'Tanto faz', !F.meus) +
+      Object.keys(MEUS_FILTRO).map(function (k) { return pilula('meus', k, MEUS_FILTRO[k], F.meus === k); }).join('') + '</div>'));
+    h.push(secFolha('Mais', '', '<div class="pills">' + pilula('ctrl', '1', '🎮 Só com controle', F.ctrl) + pilula('esc18', '1', 'Esconder +18', F.esc18) +
+      pilula('escVet', '1', 'Esconder vetados', F.escVet) + '</div><p class="fine" style="margin-top:6px">Vetados: otome (protagonista mulher que namora homens) e romance só do mesmo sexo, como na Estante do Switch.</p>'));
+    var corpo = $('folha-corpo'), top = corpo.scrollTop;
+    corpo.innerHTML = h.join('');
+    corpo.scrollTop = top;
+    var n = filtrar(V.modo === 'grade' ? V.fonte : { t: 'todos' }).lista.length;
+    $('folha-ok').textContent = 'Mostrar ' + jogosTxt(n);
+  }
+  function abrirFolha() {
+    pintarFolha();
+    if (!folha.open) { folha.showModal(); empurrar('folha'); }
+    $('folha-corpo').scrollTop = 0;
+  }
+  function fecharFolhaDom(ver) {
+    if (folha.open) folha.close();
+    redesenharFiltros();
+    if (ver && V.modo === 'catalogo') abrirGrade({ t: 'todos' });
+  }
+  folha.addEventListener('cancel', function (e) { e.preventDefault(); fecharCamada('folha'); });
+  folha.addEventListener('click', function (e) {
+    if (e.target === folha) { fecharCamada('folha'); return; }
+    var b = e.target.closest('[data-fo]');
+    if (b) {
+      var k = b.dataset.fo;
+      if (k === 'fechar') fecharCamada('folha');
+      else if (k === 'limpar') { limpar(); pintarFolha(); }
+      else if (k === 'ok') { folhaVer = true; fecharCamada('folha'); }
+      return;
+    }
+    var p = e.target.closest('[data-fg]');
+    if (!p) return;
+    var gr = p.dataset.fg, v = p.dataset.fv;
+    if (gr === 'cor') { var i = F.cor.indexOf(v); if (i >= 0) F.cor.splice(i, 1); else F.cor.push(v); if (F.cor.length === 3) F.cor = []; }
+    else if (gr === 'et') { var j = F.et.indexOf(v); if (j >= 0) F.et.splice(j, 1); else F.et.push(v); }
+    else if (gr === 'nota') F.nota = +v || 0;
+    else if (gr === 'ctrl' || gr === 'esc18' || gr === 'escVet' || gr === 'facil') F[gr] = !F[gr];
+    else F[gr] = F[gr] === v ? (gr === 'idioma' || gr === 'rom' || gr === 'gen' || gr === 'roda' || gr === 'tam' || gr === 'meus' ? '' : v) : v;
+    pintarFolha();
+    montarAtivos();
+  });
+  var folhaVer = false;
+
+  // ---------------- marcações, cabeçalho e painéis ----------------
   function contaAba(k) {
     var n = 0, id;
     if (k === 'int') for (id in M.int) n++;
@@ -651,8 +899,8 @@
     }).join('');
     cada('#seg-pc button', function (b) { b.setAttribute('aria-pressed', String(b.dataset.pc === F.pc)); });
     $('pc-expl').textContent = F.pc === 'dois'
-      ? '"Nos dois": vale o melhor dos dois PCs. Os cards mostram um selo de cada PC.'
-      : 'Os selos, os tiles e as seções usam só o ' + PCS[F.pc].nome + '.';
+      ? '"Nos dois": vale o melhor dos dois PCs; cada card mostra um selo de cada PC (Pai e Note).'
+      : 'Os selos, as listas e o "Não roda" usam só o ' + PCS[F.pc].nome + '.';
   }
   function atualizarDisco() {
     var k = F.pc === 'meu' ? 'meu' : 'pai';
@@ -674,14 +922,14 @@
       (sobra >= 0 ? 'sobram <strong>' + gb(sobra) + '</strong>' : '<span class="falta">faltam ' + gb(-sobra) + '</span>');
     if (sem) t += ' · ' + sem + ' sem tamanho informado';
     if (F.pc === 'dois') t += ' <span class="fine">("Nos dois" usa o disco do ' + PCS.pai.nome + ')</span>';
-    $('leitura').innerHTML = n ? t : 'Nenhum jogo marcado para instalar. Toque na capa de um jogo para marcar.';
+    $('leitura').innerHTML = n ? t : 'Nenhum jogo marcado para instalar. Toque no 💾 de uma capa para marcar.';
     var bar = $('barra-disco');
     bar.hidden = !n;
     document.body.classList.toggle('com-barra', !!n);
     bar.className = 'barra-disco ' + classe;
     bar.querySelector('.bd-fill').style.width = pct.toFixed(1) + '%';
     bar.querySelector('.bd-txt').innerHTML = '💾 ' + n + ' para instalar · ' + gb(soma) + ' de ' + gb(livre) + ' ' + noPC(k) +
-      (sobra < 0 ? ' · <span class="falta">não cabe</span>' : '');
+      (sobra < 0 ? ' · <span class="falta">não cabe</span>' : '') + ' · ★ ' + contaAba('int') + ' com interesse';
   }
   function atualizarResumo() {
     if (!JOGOS.length) return;
@@ -691,7 +939,7 @@
       '. Com português do Brasil: ' + fmtN.format(pt) + '.';
   }
 
-  // ---------------- camadas (grade, ficha, Tinder, capas) e o botão voltar do celular ----------------
+  // ---------------- camadas (grade, ficha, folha, Tinder, capas) e o botão voltar do celular ----------------
   var pilha = [];
   function empurrar(nome) { pilha.push(nome); try { history.pushState({ camada: nome }, ''); } catch (e) {} }
   function fecharCamada(nome) {
@@ -703,26 +951,29 @@
     if (nome === 'ficha') fecharFichaDom();
     else if (nome === 'tinder') fecharTinderDom();
     else if (nome === 'grade') voltarCatalogoDom();
+    else if (nome === 'folha') { var ver = folhaVer; folhaVer = false; fecharFolhaDom(ver); }
     else if (nome === 'capas') { if (dlgC.open) dlgC.close(); }
+    else if (nome === 'gosto') { if (gostoDlg && gostoDlg.open) gostoDlg.close(); }
+    else if (nome === 'roleta') { if (rolDlg && rolDlg.open) rolDlg.close(); }
   }
   window.addEventListener('popstate', function () { var nome = pilha.pop(); if (nome) fecharDom(nome); });
 
-  // ---------------- ficha ----------------
+  // ---------------- ficha (do jeito da ficha do Switch) ----------------
   var dlg = $('ficha');
-  var fichaId = null;
+  var fichaId = null, fichaLista = null;
 
   function planosHTML(g) {
     var id = g.i, pl = M.plano[id];
     function b(k, txt, on, extra) { return '<button type="button" class="pl-btn ' + (extra || '') + '" data-f="' + k + '" aria-pressed="' + !!on + '">' + txt + '</button>'; }
     return '<div class="planos" role="group" aria-label="Suas marcações">' +
-      b('quero', '✓ Quero jogar', pl === 'quero') + b('joguei', 'Já joguei', pl === 'joguei') +
-      b('nao', '✕ Não quero', pl === 'nao', 'pl-nao') + b('int', '☆ Tenho interesse', M.int[id]) +
-      b('inst', '💾 Quero instalar', M.inst[id]) + '</div>';
+      b('quero', (pl === 'quero' ? '▶' : '▷') + ' Quero jogar', pl === 'quero') + b('joguei', (pl === 'joguei' ? '●' : '○') + ' Já joguei', pl === 'joguei') +
+      b('int', (M.int[id] ? '★' : '☆') + ' Tenho interesse', M.int[id]) + b('inst', '💾 Quero instalar', M.inst[id]) +
+      b('nao', '✕ Não quero', pl === 'nao', 'pl-nao') + '</div>';
   }
   function blocoPC(g, f, k, idx) {
     var n = (g.v || [0, 0])[idx] || 0, p = PCS[k] || {};
-    var mo = f && f.mo ? (f.mo[idx] || []) : null;
-    return '<div class="f-pc nv' + n + '"><h3>Roda ' + esc(noPC(k)) + '?</h3>' + seloNivel(n).replace('class="selo', 'style="justify-self:start" class="selo') +
+    var mo = f && f.mo ? (f.mo[idx] || []) : g.loja ? [] : null;
+    return '<div class="f-pc nv' + n + '"><h3>Roda ' + esc(noPC(k)) + '? <span class="selo nv' + n + '">' + NIVEL[n].nome + '</span></h3>' +
       '<span class="hw">' + esc([p.cpu_n, p.gpu_n, p.ram ? p.ram + ' GB de RAM' : ''].filter(Boolean).join(' · ')) + '</span>' +
       (mo ? (mo.length ? '<ul>' + mo.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>' : '') : '<span class="f-carregando">Carregando os motivos…</span>') +
       '</div>';
@@ -733,42 +984,105 @@
     if (/^l$/i.test(ci)) return 'Livre';
     return /^\d+$/.test(ci) ? ci + ' anos' : ci;
   }
+  // o bloco "Pra você" (mod_W do Switch): a frase pq do perfil_pc.py vira a lista de motivos
+  function blocoPV(g) {
+    var c = corDe(g), x = COR[c];
+    if (!x) return '';
+    var pq = pqDe(g), itens = pq ? pq.split(' · ').filter(Boolean) : [], pros = itens, contras = [];
+    if (g._px) {
+      var mo = motivos(g), cap = function (t) { return t.charAt(0).toUpperCase() + t.slice(1); };
+      pros = mo.pros.map(function (p) { return cap(p[0]); }); contras = mo.contras.map(function (p) { return cap(p[0]); });
+      // a frase do perfil_pc.py diz QUAL jogo da série ou da editora: troca o texto genérico por ela
+      var rico = itens.filter(function (t) { return /^(Da série|Da mesma editora|Você )/.test(t); })[0];
+      if (rico) pros = pros.map(function (t) { return /^(Da série de um|Da editora de um|Você deu estrela|Você marcou)/.test(t) ? rico : t; });
+    } else {
+      if (c === 'nao' && itens.length) { contras = itens.slice(0, 1); pros = itens.slice(1); }
+      if (g._vet) { contras = [g.x === 'ot' ? 'Vetado: protagonista mulher que namora homens (otome)' : 'Vetado: romance só do mesmo sexo']; pros = []; }
+      if (g.sw === 'fav') pros = ['Você deu estrela a ele na Estante do Switch'].concat(pros);
+      if (g.r != null && g.r < 60 && !contras.length) contras.push('Nota baixa: ' + g.r + '%');
+    }
+    var li = function (l, vazio) { return l.length ? l.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') : '<li class="w-nada">' + vazio + '</li>'; };
+    return '<div class="w-pv ' + x[3] + '"><div class="w-cab"><span class="w-ico" aria-hidden="true">' + x[0] + '</span><div><span class="w-rot">Pra você · ' + pvDe(g) + ' de 100</span><span class="w-ver">' + x[1] + '</span></div></div>' +
+      '<div class="w-cols"><div class="w-col w-a"><h3>Por que você gostaria</h3><ul>' + li(pros, pq || !FICHAS[g.i] ? 'Nada em especial que puxe pro seu gosto' : 'Carregando…') + '</ul></div>' +
+      '<div class="w-col w-b"><h3>Por que talvez não gostaria</h3><ul>' + li(contras, 'Nada contra que eu tenha achado') + '</ul></div></div>' +
+      '<div class="w-ensina"><span class="fine">Me ensina:</span>' + ensinaHTML(g).replace(/data-acao="voto" data-v="(-?1)"/g, 'data-f="voto:$1"') + '</div></div>';
+  }
+  // "Parecidos com este": mesmo gênero e as mesmas etiquetas, com o seu gosto (pv) desempatando
+  function parecidos(g) {
+    var et = g._et, tg = (g.t || []).slice(0, 6), r = [];
+    for (var i = 0; i < JOGOS.length; i++) {
+      var x = JOGOS[i];
+      if (x === g || M.plano[x.i] === 'nao' || !passaGlobal(x, false) || nv(x) === 1) continue;
+      var s = (x.g === g.g ? 3 : 0);
+      for (var a = 0; a < et.length; a++) if (x._et.indexOf(et[a]) >= 0) s += 1;
+      for (var b = 0; b < tg.length; b++) if ((x.t || []).indexOf(tg[b]) >= 0) s += 0.5;
+      if (s < 4) continue;
+      r.push([s + pvDe(x) / 50, x]);
+    }
+    r.sort(function (p, q) { return q[0] - p[0]; });
+    return r.slice(0, 4).map(function (p) { return p[1]; });
+  }
   function montarFicha(g) {
     var f = FICHAS[g.i];
     var estado = f ? 'ok' : fichaEstado[g.f] === 'erro' ? 'erro' : 'carregando';
-    var cor = COR_GEN[g.g] || COR_GEN.outro;
-    var gen = (CONF.gen || {})[g.g] || '';
+    var cor = COR_GEN[g.g] || '#3a4a6b';
+    var pos = fichaLista ? fichaLista.indexOf(g) : -1;
     var h = '<div class="f-in">';
     h += '<button type="button" class="f-x" data-f="fechar" aria-label="Fechar a ficha">✕</button>';
     h += '<div class="f-heroi" style="--gc:' + cor + '">' + (g.c ? '<img class="f-fundo" alt="" aria-hidden="true" src="' + esc(urlCapa(g.c)) + '">' : '') +
-      '<div class="f-capa-box"><span class="capa-sem" aria-hidden="true">' + esc(g.n) + '</span>' + imgCapa(g, 'f-capa', false) + '</div></div>';
-    h += '<div class="f-tit"><h2 id="f-nome">' + esc(g.n) + '</h2><p class="f-gen">' + esc([gen, g.a, g.em_breve ? 'ainda não lançado' : ''].filter(Boolean).join(' · ')) + '</p>' +
-      '<div class="selos">' + selosTodos(g, true) + '</div></div>';
+      (pos >= 0 ? '<button type="button" class="f-seta esq" data-f="ant" aria-label="Jogo anterior"' + (pos <= 0 ? ' disabled' : '') + '>‹</button>' : '') +
+      '<div class="f-capa-box"><span class="capa-sem" aria-hidden="true">' + esc(g.n) + '</span>' + imgCapa(g, 'f-capa') + '</div>' +
+      (pos >= 0 ? '<button type="button" class="f-seta dir" data-f="prox" aria-label="Próximo jogo"' + (pos >= fichaLista.length - 1 ? ' disabled' : '') + '>›</button>' +
+        '<span class="f-pos">' + fmtN.format(pos + 1) + ' de ' + fmtN.format(fichaLista.length) + '</span>' : '') + '</div>';
+    var chips = [];
+    if (g.pt === 2) chips.push('<span class="f-chip pt">🎙 Dublado em PT-BR</span>');
+    else if (g.pt === 1) chips.push('<span class="f-chip pt">PT-BR oficial</span>');
+    else chips.push('<span class="f-chip cinza">' + (g.pp ? 'Só PT de Portugal' : 'Sem PT-BR') + '</span>');
+    var rk = g.rk || (g.rom ? 'opc' : '');
+    if (rk === 'sim' || rk === 'opc') chips.push('<span class="f-chip rom">♥ ' + ROM_TXT[rk] + '</span>');
+    else if (rk === 'leve') chips.push('<span class="f-chip rom">♡ Romance de fundo</span>');
+    else if (rk === 'nc') chips.push('<span class="f-chip cinza">? Romance não conferido</span>');
+    if (ehJoia(g)) chips.push('<span class="f-chip joia">💎 Joia escondida</span>');
+    if (g.sw === 'fav') chips.push('<span class="f-chip sw">★ Estrela no Switch</span>');
+    if (g._vet) chips.push('<span class="f-chip veto">' + (g.x === 'ot' ? 'Protagonista mulher que namora homens' : 'Romance só do mesmo sexo') + '</span>');
+    if (g.ad) chips.push('<span class="f-chip adulto">🔞 Conteúdo adulto (+18)</span>');
+    if (g.loja) chips.push('<span class="f-chip cinza">🌐 ' + esc(lojaNome(g)) + '</span>');
+    h += '<div class="f-tit"><button type="button" class="f-gen" data-f="gen">' + esc(genNome(g.g)) + ' ›</button><h2 id="f-nome">' + esc(g.n) + '</h2>' +
+      '<div class="f-chips">' + chips.join('') + '</div></div>';
+    h += blocoPV(g);
+    h += blocoRf(f && f.rf);
+    var info = [];
+    if (g.r != null) info.push('★ Nota dos jogadores: ' + g.r + '%' + (g.rv ? ' de ' + fmtN.format(g.rv) : ''));
+    if (g.s != null) info.push('💾 ' + gb(g.s) + ' no disco');
+    if (g.a) info.push('📅 ' + g.a);
+    if (g.ct) info.push('🎮 Controle ' + (g.ct === 2 ? 'total' : 'parcial'));
+    if (g.dk === 3) info.push('Steam Deck: verificado'); else if (g.dk === 2) info.push('Steam Deck: jogável');
+    if (info.length) h += '<div class="f-info">' + info.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>';
+    if (g._et.length) h += '<div class="etqs" aria-label="Etiquetas (tocar filtra)">' + g._et.filter(function (c) { return ETIQ[c]; }).map(function (c) {
+      return '<button type="button" class="etq" data-f="et:' + c + '" title="Ver os jogos com esta etiqueta">' + esc(ETIQ[c][0]) + '</button>';
+    }).join('') + '</div>';
     h += planosHTML(g);
-    h += '<div class="links"><a class="btn btn-forte" href="https://store.steampowered.com/app/' + g.i + '/" target="_blank" rel="noopener">Abrir na Steam</a>' +
+    h += g.loja ? '<div class="links">' + (g.url ? '<a class="btn btn-forte" href="' + esc(g.url) + '" target="_blank" rel="noopener">Abrir na loja (' + esc(lojaNome(g)) + ') ↗</a>' : '') + '</div>'
+      : '<div class="links"><a class="btn btn-forte" href="https://store.steampowered.com/app/' + g.i + '/" target="_blank" rel="noopener">Abrir na Steam ↗</a>' +
       '<a class="btn" href="steam://store/' + g.i + '">Abrir no app da Steam</a></div>';
+    h += blocoEf(g, f);
     if (estado === 'carregando') h += '<p class="f-carregando">Carregando os detalhes…</p>';
     else if (estado === 'erro') h += '<p class="aviso">Não deu para carregar os detalhes deste jogo. <button type="button" class="btn" data-f="recarregar">Tentar de novo</button></p>';
-    var gosto = GOSTO[g.nv], pq = pqDe(g);
-    if (gosto || pq) {
-      h += '<p class="f-pq"><b>' + (gosto ? gosto[0] + ' ' + gosto[1] : '🎯 Pra você') + (g.pv != null ? ' (' + g.pv + ' de 100)' : '') + '</b>' +
-        (pq ? '<br>Por que é a sua cara: ' + esc(pq) : '') + (g.sw === 'fav' ? '<br>Você deu estrela a ele na Estante do Switch.' : '') + '</p>';
-    }
-    if (f && f.ds) h += '<p class="f-desc">' + esc(f.ds) + '</p>';
     h += '<div class="f-pcs">' + blocoPC(g, f, 'pai', 0) + blocoPC(g, f, 'meu', 1) + '</div>';
+    if (f && f.sc && f.sc.length) {
+      h += '<div class="f-sec"><h3>Fotos</h3><div class="fotos">' + f.sc.map(function (s, i) {
+        var u = BASE + esc(s);
+        return '<a href="' + u + '" target="_blank" rel="noopener"><img loading="lazy" decoding="async" width="600" height="338" src="' + u + '" alt="Foto ' + (i + 1) + ' de ' + esc(g.n) + '"></a>';
+      }).join('') + '</div></div>';
+    }
+    if (f && f.ds) h += '<div class="f-sec"><h3>O que é</h3><p class="f-desc">' + esc(f.ds) + '</p></div>';
     var etqs = f && f.tg && f.tg.length ? f.tg.map(function (t) { return TAG_PT[t] || t; }) : g._tp;
-    if (etqs.length) h += '<div class="f-sec"><h3>Etiquetas</h3><div class="etqs">' + etqs.map(function (t) { return '<span class="etq">' + esc(t) + '</span>'; }).join('') + '</div></div>';
+    if (etqs.length) h += '<div class="f-sec"><h3>Etiquetas da Steam</h3><div class="etqs">' + etqs.map(function (t) { return '<span class="etq so">' + esc(t) + '</span>'; }).join('') + '</div></div>';
     if (f && (f.mn || f.rc)) {
       h += '<div class="f-sec"><h3>Requisitos</h3>';
       if (f.mn) h += '<details class="req"><summary>Mínimos</summary><pre>' + esc(f.mn) + '</pre></details>';
       if (f.rc) h += '<details class="req"><summary>Recomendados</summary><pre>' + esc(f.rc) + '</pre></details>';
       h += '</div>';
-    }
-    if (f && f.sc && f.sc.length) {
-      h += '<div class="f-sec"><h3>Capturas</h3><div class="fotos">' + f.sc.map(function (s, i) {
-        var u = BASE + esc(s);
-        return '<a href="' + u + '" target="_blank" rel="noopener"><img loading="lazy" decoding="async" width="600" height="338" src="' + u + '" alt="Captura ' + (i + 1) + ' de ' + esc(g.n) + '"></a>';
-      }).join('') + '</div></div>';
     }
     var d = [];
     function linha(k, v) { if (v) d.push('<dt>' + k + '</dt><dd>' + v + '</dd>'); }
@@ -784,7 +1098,7 @@
     if (g['do']) linha('Donos', 'a partir de ' + fmtN.format(g['do']) + ' (SteamSpy)');
     if (g.s != null) linha('No disco', gb(g.s));
     linha('Controle', g.ct === 2 ? 'Suporte total' : g.ct === 1 ? 'Suporte parcial' : '');
-    linha('Romance', esc(textoRom(g)) || (g.rk === undefined && TEM_PV ? 'Sem romance' : ''));
+    linha('Romance', rk ? ROM_TXT[rk] : (TEM_PV ? 'Sem romance' : ''));
     linha('Português', g.pt === 2 ? 'Dublado em PT-BR' : g.pt === 1 ? 'Interface e legendas em PT-BR' : g.pp ? 'Só português de Portugal' : 'Sem português');
     if (f) {
       linha('Idiomas', esc(f.lg));
@@ -792,12 +1106,15 @@
       if (f.w) linha('Site', '<a href="' + esc(f.w) + '" target="_blank" rel="noopener">' + esc(f.w.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')) + '</a>');
     }
     if (d.length) h += '<div class="f-sec"><h3>Dados</h3><dl class="dados">' + d.join('') + '</dl></div>';
+    var par = parecidos(g);
+    if (par.length) h += '<div class="f-sec f-par"><h3>Parecidos com este</h3><div class="grid">' + par.map(function (x) { return cardHTML(x, false); }).join('') + '</div></div>';
     h += '</div>';
     dlg.innerHTML = h;
   }
-  function abrirFicha(id) {
+  function abrirFicha(id, lista) {
     var g = POR_ID[id];
     if (!g) return;
+    if (lista !== undefined) fichaLista = lista && lista.indexOf(g) >= 0 ? lista : null;
     fichaId = g.i;
     montarFicha(g);
     if (!dlg.open) {
@@ -805,25 +1122,48 @@
       empurrar('ficha');
     }
     dlg.scrollTop = 0;
-    pedirFicha(g.f, function () { if (fichaId === g.i && dlg.open) { var top = dlg.scrollTop; montarFicha(g); dlg.scrollTop = top; } });
+    if (!FICHAS[g.i]) pedirFicha(g.f, function () { if (fichaId === g.i && dlg.open) { var top = dlg.scrollTop; montarFicha(g); dlg.scrollTop = top; } });
   }
   function fecharFichaDom() {
     if (dlg.open) { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); }
     fichaId = null;
   }
+  function andarFicha(d) {
+    if (!fichaLista) return;
+    var i = fichaLista.indexOf(POR_ID[fichaId]) + d;
+    if (i >= 0 && i < fichaLista.length) abrirFicha(fichaLista[i].i);
+  }
   dlg.addEventListener('cancel', function (e) { e.preventDefault(); fecharCamada('ficha'); });
   dlg.addEventListener('click', function (e) {
     if (e.target === dlg) { fecharCamada('ficha'); return; }
+    var card = e.target.closest('.card [data-acao]');
+    if (card) {
+      var cid = card.closest('.card').dataset.id;
+      if (card.dataset.acao === 'ver') abrirFicha(cid, null);
+      else if (card.dataset.acao === 'pq') mostrarPq(card.closest('.card'));
+      else if (card.dataset.acao === 'voto') votar(cid, +card.dataset.v);
+      else marcar(cid, card.dataset.acao);
+      return;
+    }
     var b = e.target.closest('[data-f]');
     if (!b) return;
     var k = b.dataset.f, g = POR_ID[fichaId];
     if (k === 'fechar') { fecharCamada('ficha'); return; }
     if (k === 'recarregar') { fichaEstado[g.f] = ''; abrirFicha(g.i); return; }
+    if (k === 'ant') { andarFicha(-1); return; }
+    if (k === 'prox') { andarFicha(1); return; }
+    if (k.indexOf('voto:') === 0) { votar(String(g.i), +k.slice(5)); return; }
+    if (k === 'gen') { var gk = g.g; fecharCamada('ficha'); setTimeout(function () { abrirGrade({ t: 'gen', k: gk }); }, 30); return; }
+    if (k.indexOf('et:') === 0) {
+      var c = k.slice(3);
+      if (F.et.indexOf(c) < 0) F.et.push(c);
+      fecharCamada('ficha');
+      setTimeout(function () { if (V.modo === 'catalogo') abrirGrade({ t: 'todos' }); else redesenharFiltros(); }, 30);
+      return;
+    }
     marcar(fichaId, k);
     var velho = dlg.querySelector('.planos');
     if (velho) velho.outerHTML = planosHTML(g);
-    var sel = dlg.querySelector('.f-tit .selos');
-    if (sel) sel.innerHTML = selosTodos(g, true);
   });
 
   // ---------------- marcar ----------------
@@ -849,7 +1189,7 @@
     T.pos = 0; T.hist = []; T.cont = { quero: 0, int: 0, nao: 0 };
     TT.innerHTML =
       '<div class="t-col">' +
-        '<div class="t-topo"><h2>🃏 Modo Tinder</h2><p class="t-conta" id="t-conta"></p><button type="button" class="t-x" data-t="fechar" aria-label="Sair do modo Tinder">✕</button></div>' +
+        '<div class="t-topo"><h2>🃏 Avaliar jogos</h2><p class="t-conta" id="t-conta"></p><button type="button" class="t-x" data-t="fechar" aria-label="Sair">✕</button></div>' +
         '<div class="t-palco" id="t-palco"></div>' +
         '<div class="t-bts">' +
           '<button type="button" class="t-desf" data-t="desfazer" aria-label="Desfazer" title="Desfazer">↶</button>' +
@@ -877,13 +1217,13 @@
       var mo = f && f.mo ? (f.mo[i] || [])[0] : '';
       return '<div class="t-pc nv' + (v[i] || 0) + '"><b>' + esc(PCS[k].nome) + ': ' + NIVEL[v[i] || 0].nome + '</b>' + (mo ? '<span>' + esc(mo) + '</span>' : '') + '</div>';
     }
-    return '<div class="t-card ' + classe + '" data-id="' + g.i + '" style="--gc:' + (COR_GEN[g.g] || COR_GEN.outro) + '">' +
+    return '<div class="t-card ' + classe + '" data-id="' + g.i + '" style="--gc:' + (COR_GEN[g.g] || '#3a4a6b') + '">' +
       '<div class="t-capa">' + (g.c ? '<img class="t-fundo" alt="" aria-hidden="true" src="' + esc(urlCapa(g.c)) + '">' : '') +
         '<div class="t-capa-box"><span class="capa-sem" aria-hidden="true">' + esc(g.n) + '</span>' + imgCapa(g, 't-img', false) + '</div>' +
         '<span class="t-carimbo t-c-sim">QUERO</span><span class="t-carimbo t-c-nao">NÃO</span><span class="t-carimbo t-c-int">☆ INTERESSE</span>' +
       '</div>' +
-      '<div class="t-corpo"><h3 class="t-tit">' + esc(g.n) + '</h3><div class="selos">' + selosTodos(g, true) + '</div>' +
-        '<div class="t-vered">' + pc('pai', 0) + pc('meu', 1) + '</div>' +
+      '<div class="t-corpo"><h3 class="t-tit">' + esc(g.n) + '</h3><div class="selos">' + selosCard(g) + '</div>' +
+        (pqDe(g) ? '<p class="t-pq">' + esc(pqDe(g)) + '</p>' : '') + '<div class="t-vered">' + pc('pai', 0) + pc('meu', 1) + '</div>' +
         (f && f.ds ? '<p class="t-desc">' + esc(f.ds) + '</p>' : '') +
         '<button type="button" class="ver" data-t="ficha">Ver a ficha completa</button>' +
       '</div></div>';
@@ -990,7 +1330,7 @@
   function gravarPac(o) { try { localStorage.setItem(K_PAC, JSON.stringify(o)); } catch (e) {} }
   function escopoJogos(k) {
     return JOGOS.filter(function (g) {
-      if (!g.c) return false;
+      if (!g.c || g._ext) return false;
       if (k === 'rodam') return nv(g) >= 3;
       if (k && k.indexOf('gen:') === 0) return g.g === k.slice(4);
       return true;
@@ -1218,7 +1558,7 @@
 
   // ---------------- cópia das marcações ----------------
   function exportar() {
-    var dados = { app: 'estante-pc', versao: 1, data: new Date().toISOString(), int: M.int, inst: M.inst, plano: M.plano };
+    var dados = { app: 'estante-pc', versao: 1, data: new Date().toISOString(), int: M.int, inst: M.inst, plano: M.plano, voto: M.voto, gosto: M.gosto };
     var blob = new Blob([JSON.stringify(dados, null, 1)], { type: 'application/json' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1237,12 +1577,445 @@
         for (id in d.int || {}) { M.int[id] = 1; n++; }
         for (id in d.inst || {}) { M.inst[id] = 1; n++; }
         for (id in d.plano || {}) { if (['quero', 'joguei', 'nao'].indexOf(d.plano[id]) >= 0) { M.plano[id] = d.plano[id]; n++; } }
-        salvar(); desenhar(true); atualizarDisco();
+        for (id in d.voto || {}) { if (d.voto[id] === 1 || d.voto[id] === -1) { M.voto[id] = d.voto[id]; n++; } }
+        if (d.gosto && typeof d.gosto === 'object') M.gosto = d.gosto;
+        salvar(); recalcGosto(); desenhar(true); atualizarDisco();
         $('marc-msg').textContent = 'Cópia carregada: ' + n + ' marcações juntadas às que já estavam aqui.';
       } catch (e) { $('marc-msg').textContent = 'Esse arquivo não é uma cópia da Estante do PC.'; }
     };
     r.readAsText(arq);
   }
+
+  // =====================================================================================================
+  // 1.10 (26/11): o gosto refeito no navegador ("Ajustar o gosto" e "Me ensina"), o "por quê" da bolinha,
+  // listas famosas, melhores romances, roleta, modo uma mão, gestos na grade e tamanho das capas.
+  // =====================================================================================================
+  function limitar(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function vir(n) { return String(Math.round(n * 10) / 10).replace('.', ','); }
+  // ---- os ingredientes do pv (perfil_pc.py: campo px) em grupos que o usuário pode pesar ----
+  var GRUPOS_GOSTO = [
+    ['rom', '💗 Romance', 'Quanto pesa ter romance ("dá pra namorar", central, de fundo) e quanto pesa não ter.', ['rs', 'ro', 'rl', 'rn', 'rx']],
+    ['nicho', '🎲 RPG nichado e retrô', 'RPG pequeno e pouco conhecido, pixel, masmorra, livro-jogo.', ['gN', 'gR']],
+    ['rpg', '⚔ RPG em geral', 'RPG grande, CRPG e tática.', ['gP', 'gC', 'gT', 'gO']],
+    ['nota', '★ Nota dos jogadores', 'Quanto a nota da Steam conta, para cima e para baixo.', ['nt']],
+    ['pt', '💬 Português', '0 = aceito sem PT-BR (eu traduzo); 2 = faz muita diferença ter PT-BR.', ['id']],
+    ['sw', '★ O que marquei no Switch', 'Mesmo jogo, mesma série ou editora, e as pistas que você curte.', ['sf', 'ss', 'se', 'ed', 'pi']],
+    ['nao', '✕ Tipos que não curto', 'Esporte, corrida, tiro, festa, multijogador, gênero que você nunca marca.', ['nu', 'ad', 'du']]
+  ];
+  var GRUPO_COD = {};
+  GRUPOS_GOSTO.forEach(function (gr) { gr[3].forEach(function (c) { GRUPO_COD[c] = gr[0]; }); });
+  function grupoCod(c) { return GRUPO_COD[c] || (c.indexOf('n_') === 0 ? 'nao' : ''); }
+  function multDe(c) { var k = grupoCod(c), v = k && M.gosto ? M.gosto[k] : null; return typeof v === 'number' ? v : 1; }
+  var APR = { gen: {}, et: {}, n: 0 };
+  // "Me ensina": cada voto puxa o gênero (0,6) e as etiquetas (0,25 cada) dos jogos parecidos, com limite
+  function aprender() {
+    var gen = {}, et = {}, n = 0;
+    Object.keys(M.voto || {}).forEach(function (id) {
+      var g = POR_ID[id], v = M.voto[id];
+      if (!g || (v !== 1 && v !== -1)) return;
+      n++;
+      gen[g.g] = (gen[g.g] || 0) + 0.6 * v;
+      g._et.forEach(function (c) { et[c] = (et[c] || 0) + 0.25 * v; });
+    });
+    Object.keys(gen).forEach(function (k) { gen[k] = limitar(gen[k], -2, 2); });
+    Object.keys(et).forEach(function (k) { et[k] = limitar(et[k], -1.5, 1.5); });
+    APR = { gen: gen, et: et, n: n };
+  }
+  function aprendido(g) {
+    var s = APR.gen[g.g] || 0;
+    for (var i = 0; i < g._et.length; i++) s += APR.et[g._et[i]] || 0;
+    return limitar(s, -2.5, 2.5);
+  }
+  // a mesma conta do perfil_pc.py (e do notaGosto do Switch): 🟢 conta >= 3 (74 a 99), 🟡 entre (51 a 73), 🔴 <= 0 (0 a 50)
+  function calcGosto(g) {
+    if (!g._px) { g._pv = g.pv; g._nv = g.nv; g._ap = 0; return; }
+    if (g.x) { g._pv = 0; g._nv = 'nao'; g._ap = 0; return; }
+    var s = 0;
+    for (var i = 0; i < g._px.length; i++) s += g._px[i][1] * multDe(g._px[i][0]);
+    var ap = APR.n && !(M.voto && M.voto[g.i]) ? aprendido(g) : 0;
+    s += ap; g._ap = ap;
+    var v = M.voto && M.voto[g.i];
+    if (v === 1) s = Math.max(s, 4); else if (v === -1) s = Math.min(s, -0.5);
+    var c = s >= 3 ? 'sim' : s <= 0 ? 'nao' : 'talvez', n;
+    if (c === 'sim') n = 74 + 26 * (1 - Math.exp(-(s - 3) / 4));
+    else if (c === 'talvez') n = 51 + 22 * s / 3;
+    else n = 50 * Math.exp(s / 2.5);
+    g._pv = Math.round(Math.min(c === 'sim' ? 99 : 100, n)); g._nv = c; g._s = s;
+  }
+  function recalcGosto() { aprender(); for (var i = 0; i < JOGOS.length; i++) calcGosto(JOGOS[i]); }
+  // ---- o "por quê" (uma linha, sem abrir a ficha) ----
+  var TXT_COD = { rs: 'romance central', ro: 'dá pra namorar', rl: 'romance de fundo', rn: 'pode ter romance', rx: 'sem romance',
+    sf: 'você deu estrela no Switch', ss: 'você marcou no Switch', se: 'da série de um jogo seu', ed: 'da editora de um jogo seu',
+    gN: 'RPG nichado', gR: 'RPG retrô', gC: 'CRPG', gP: 'RPG', gT: 'tática', pi: 'tem coisas que você curte', nu: 'gênero que você quase não marca',
+    ad: 'foco em conteúdo adulto', du: 'longo demais', n_es: 'esporte', n_co: 'corrida', n_fe: 'festa e minigames', n_mp: 'multijogador',
+    n_lu: 'luta', n_ti: 'tiro', n_ca: 'casual', n_ed: 'nem é bem um jogo', n_ki: 'feito pra criança', n_ac: 'pede muito reflexo',
+    n_hr: 'terror', n_pz: 'mais quebra-cabeça que história' };
+  function txtCod(g, c, w) {
+    if (c === 'nt') return g.r != null ? 'nota ' + g.r + '%' : 'sem nota';
+    if (c === 'id') return w > 0 ? (g.pt === 2 ? 'dublado em PT-BR' : g.pt ? 'tem PT-BR' : 'curto, dá pra traduzir') : 'sem PT-BR';
+    if (c === 'gO') return genNome(g.g);
+    return TXT_COD[c] || c;
+  }
+  function motivos(g) {
+    var pros = [], contras = [];
+    (g._px || []).forEach(function (t) {
+      var w = t[1] * multDe(t[0]);
+      if (Math.abs(w) < 0.25) return;
+      (w > 0 ? pros : contras).push([txtCod(g, t[0], w), w]);
+    });
+    if (g._ap && Math.abs(g._ap) >= 0.25) (g._ap > 0 ? pros : contras).push([g._ap > 0 ? 'parecido com os que você aprovou' : 'parecido com os que você reprovou', g._ap]);
+    pros.sort(function (a, b) { return b[1] - a[1]; });
+    contras.sort(function (a, b) { return a[1] - b[1]; });
+    var v = M.voto && M.voto[g.i];
+    if (v === 1) pros.unshift(['você me ensinou que gosta', 9]);
+    if (v === -1) contras.unshift(['você me ensinou que não tem nada a ver', -9]);
+    if (g._vet) contras.unshift([g.x === 'ot' ? 'vetado: otome' : 'vetado: romance só do mesmo sexo', -10]);
+    return { pros: pros, contras: contras };
+  }
+  function linhaPq(g) {
+    var c = corDe(g), m = motivos(g), x = COR[c];
+    if (!x) return 'Sem a nota de gosto para este jogo.';
+    function j(l) { return l.map(function (p) { return p[0]; }).join(' + '); }
+    if (c === 'nao') return 'Por que não: ' + (j(m.contras.slice(0, 3)) || 'pouca coisa a favor') + (m.pros.length ? ' (a favor: ' + j(m.pros.slice(0, 1)) + ')' : '');
+    if (c === 'sim') return 'Por que é a sua cara: ' + (j(m.pros.slice(0, 3)) || 'o conjunto') + (m.contras.length ? ' (contra: ' + j(m.contras.slice(0, 1)) + ')' : '');
+    return 'Talvez: ' + (m.pros.length ? '+ ' + j(m.pros.slice(0, 2)) : '') + (m.contras.length ? ' · − ' + j(m.contras.slice(0, 2)) : '');
+  }
+  function ensinaHTML(g) {
+    var v = M.voto && M.voto[g.i];
+    return '<span class="ensina">' +
+      '<button type="button" data-acao="voto" data-v="1" aria-pressed="' + (v === 1) + '">👍 Eu gostaria</button>' +
+      '<button type="button" data-acao="voto" data-v="-1" aria-pressed="' + (v === -1) + '">👎 Nada a ver</button></span>';
+  }
+  function mostrarPq(card) {
+    var g = POR_ID[card.dataset.id], velho = card.querySelector('.pq-linha');
+    if (velho) { velho.remove(); return; }
+    if (!g) return;
+    var p = document.createElement('div');
+    p.className = 'pq-linha pq-' + corDe(g);
+    p.innerHTML = '<p>' + COR[corDe(g)][0] + ' ' + esc(linhaPq(g)) + '</p>' + ensinaHTML(g);
+    card.querySelector('.selos').insertAdjacentElement('afterend', p);
+  }
+  function redesenharGosto() {
+    recalcGosto();
+    if (V.modo === 'catalogo') comAncora(function () { desenhar(true); }); else desenhar(true);
+    if (dlg.open && fichaId != null && POR_ID[fichaId]) { var top = dlg.scrollTop; montarFicha(POR_ID[fichaId]); dlg.scrollTop = top; }
+    if (gostoDlg && gostoDlg.open) pintarGosto();
+  }
+  function votar(id, v) {
+    M.voto = M.voto || {};
+    if (M.voto[id] === v) delete M.voto[id]; else M.voto[id] = v;
+    salvar();
+    redesenharGosto();
+    var g = POR_ID[id];
+    if (g) aviso((M.voto[id] ? (v === 1 ? '👍 Anotado: você gostaria de ' : '👎 Anotado: nada a ver com ') + g.n + '. Os parecidos mudaram de cor.' : 'Voto tirado.'), null);
+  }
+  // ---- aviso embaixo (some sozinho; com "Desfazer" quando dá) ----
+  var avisoEl = null, avisoT = 0;
+  function aviso(txt, desfazer) {
+    if (!avisoEl) { avisoEl = document.createElement('div'); avisoEl.className = 'aviso-baixo'; avisoEl.setAttribute('role', 'status'); document.body.appendChild(avisoEl); }
+    avisoEl.innerHTML = '<span>' + esc(txt) + '</span>' + (desfazer ? '<button type="button">Desfazer</button>' : '');
+    avisoEl.hidden = false;
+    if (desfazer) avisoEl.querySelector('button').onclick = function () { desfazer(); avisoEl.hidden = true; };
+    clearTimeout(avisoT);
+    avisoT = setTimeout(function () { avisoEl.hidden = true; }, 5000);
+  }
+  // ---- "🎚 Ajustar o gosto" ----
+  var gostoDlg = null;
+  function pintarGosto() {
+    var cont = { sim: 0, talvez: 0, nao: 0 };
+    JOGOS.forEach(function (g) { var c = corDe(g); if (cont[c] != null) cont[c]++; });
+    var votos = Object.keys(M.voto || {}).filter(function (id) { return POR_ID[id]; });
+    var h = '<p class="fine">Os controles mudam o peso de cada parte da conta da bolinha. As cores e a ordem "Mais a sua cara" se refazem na hora, e o ajuste sincroniza com o outro aparelho.</p>' +
+      '<p class="gs-cont">🟢 ' + fmtN.format(cont.sim) + ' · 🟡 ' + fmtN.format(cont.talvez) + ' · 🔴 ' + fmtN.format(cont.nao) + '</p>';
+    h += GRUPOS_GOSTO.map(function (gr) {
+      var v = M.gosto && typeof M.gosto[gr[0]] === 'number' ? M.gosto[gr[0]] : 1;
+      return '<label class="gs-item"><span class="gs-tit">' + gr[1] + ' <b>' + (v === 0 ? 'não conta' : '×' + vir(v)) + '</b></span><span class="fine">' + gr[2] + '</span>' +
+        '<input type="range" min="0" max="2" step="0.25" value="' + v + '" data-gs="' + gr[0] + '"></label>';
+    }).join('');
+    h += '<div class="gs-votos"><h3>👍👎 O que você me ensinou</h3>' + (votos.length
+      ? '<p class="fine">' + votos.length + (votos.length === 1 ? ' jogo' : ' jogos') + ': ' + votos.slice(0, 12).map(function (id) { return (M.voto[id] > 0 ? '👍 ' : '👎 ') + esc(POR_ID[id].n); }).join(' · ') + (votos.length > 12 ? '…' : '') + '</p>' +
+        '<p class="fine">O que aprendi: ' + (Object.keys(APR.gen).filter(function (k) { return Math.abs(APR.gen[k]) >= 0.3; }).map(function (k) { return genNome(k) + ' ' + (APR.gen[k] > 0 ? '+' : '') + vir(APR.gen[k]); }).join(', ') || 'ainda pouco') + '.</p>' +
+        '<button type="button" class="btn" data-gs-acao="esquecer">Esquecer o que ensinei</button>'
+      : '<p class="fine">Toque na bolinha de um card e diga "👍 Eu gostaria" ou "👎 Nada a ver": os jogos parecidos (mesmo gênero e mesmas etiquetas) mudam de cor.</p>') + '</div>';
+    $('gs-corpo').innerHTML = h;
+  }
+  function abrirGosto() {
+    if (!gostoDlg) {
+      gostoDlg = document.createElement('dialog');
+      gostoDlg.id = 'dlg-gosto';
+      gostoDlg.setAttribute('aria-labelledby', 'gs-t');
+      gostoDlg.innerHTML = '<div class="dc-in"><div class="dc-topo"><h2 id="gs-t">🎚 Ajustar o gosto</h2><button type="button" class="dc-x" data-gs-acao="fechar" aria-label="Fechar">✕</button></div>' +
+        '<div id="gs-corpo"></div><div class="actions"><button type="button" class="btn" data-gs-acao="padrao">Voltar ao padrão</button><button type="button" class="btn btn-forte" data-gs-acao="fechar">Pronto</button></div></div>';
+      document.body.appendChild(gostoDlg);
+      var t = 0;
+      gostoDlg.addEventListener('input', function (e) {
+        var r = e.target.closest('[data-gs]');
+        if (!r) return;
+        M.gosto = M.gosto || {};
+        M.gosto[r.dataset.gs] = +r.value;
+        var b = r.parentNode.querySelector('.gs-tit b'); if (b) b.textContent = +r.value === 0 ? 'não conta' : '×' + vir(+r.value);
+        clearTimeout(t);
+        t = setTimeout(function () { salvar(); redesenharGosto(); }, 200);
+      });
+      gostoDlg.addEventListener('cancel', function (e) { e.preventDefault(); fecharCamada('gosto'); });
+      gostoDlg.addEventListener('click', function (e) {
+        if (e.target === gostoDlg) { fecharCamada('gosto'); return; }
+        var b = e.target.closest('[data-gs-acao]');
+        if (!b) return;
+        var k = b.dataset.gsAcao;
+        if (k === 'fechar') fecharCamada('gosto');
+        else if (k === 'padrao') { M.gosto = {}; salvar(); redesenharGosto(); }
+        else if (k === 'esquecer') { M.voto = {}; salvar(); redesenharGosto(); }
+      });
+    }
+    pintarGosto();
+    if (!gostoDlg.open) { gostoDlg.showModal(); empurrar('gosto'); }
+  }
+
+  // ---- listas famosas (CONF.listas): o que está na estante, marcado, roda, falta ----
+  var LISTAS_F = Array.isArray(CONF.listas) ? CONF.listas : [];
+  var LISTA_POS = {};
+  LISTAS_F.forEach(function (l) { var m = {}; (l.itens || []).forEach(function (it) { if (it.appid) m[it.appid] = it.pos; }); LISTA_POS[l.id] = m; });
+  function listaPorId(id) { return LISTAS_F.filter(function (l) { return l.id === id; })[0]; }
+  function statsLista(l) {
+    var r = { total: (l.itens || []).length, tem: 0, marc: 0, roda: 0, naoRoda: 0, fora: [] };
+    (l.itens || []).forEach(function (it) {
+      var g = it.appid && POR_ID[it.appid];
+      if (!g) { r.fora.push(it); return; }
+      r.tem++;
+      if (abaOk(g, 'marc') || M.plano[g.i] === 'joguei') r.marc++;
+      if (nv(g) >= 3) r.roda++; else if (nv(g) === 1) r.naoRoda++;
+    });
+    return r;
+  }
+  function listasHTML() {
+    if (!LISTAS_F.length) return '';
+    return '<section class="sec" id="sec-listas" aria-labelledby="sec-listas-t"><div class="sec-cab"><h2 id="sec-listas-t"><span aria-hidden="true">📋</span>Listas famosas</h2></div>' +
+      '<p class="sec-dsc">Os mais citados nas listas de melhores: o que você já marcou, o que roda e o que nem está na estante.</p><div class="gens listas">' +
+      LISTAS_F.map(function (l) {
+        var s = statsLista(l);
+        return '<button type="button" class="gen-t lista-t" data-ver="lista:' + esc(l.id) + '"><span class="lt-n" aria-hidden="true">' + s.total + '</span><b>' + esc(l.nome) + '</b>' +
+          '<small>' + s.marc + ' marcados · ' + s.roda + ' rodam · ' + s.fora.length + ' fora da estante</small></button>';
+      }).join('') + '</div></section>';
+  }
+  function extraLista(l) {
+    var s = statsLista(l);
+    var h = '<div class="lista-res"><span><b>' + s.tem + '</b> de ' + s.total + ' na estante</span><span><b>' + s.marc + '</b> marcados</span><span class="ok"><b>' + s.roda + '</b> rodam</span><span class="ruim"><b>' + s.naoRoda + '</b> não rodam</span><span><b>' + s.fora.length + '</b> fora da estante</span></div>' +
+      (l.fonte ? '<p class="fine">Fonte: ' + esc(l.fonte) + '</p>' : '');
+    if (s.fora.length) h += '<details class="fora-lista"><summary>Fora da estante (' + s.fora.length + '): ainda não coletados, só on-line ou sem dados</summary><ol>' +
+      s.fora.map(function (it) {
+        return '<li value="' + it.pos + '">' + (it.appid ? '<a href="https://store.steampowered.com/app/' + it.appid + '/" target="_blank" rel="noopener">' + esc(it.nome) + ' ↗</a>' : esc(it.nome)) + '</li>';
+      }).join('') + '</ol></details>';
+    return h;
+  }
+  // ---- 💕 Os melhores romances do PC (CONF.melhores_rom: central, opcional, de fundo) ----
+  var MROM = CONF.melhores_rom || null;
+  var MROM_PARTES = [['central', '♥ Romance central'], ['opcional', '♥ Dá pra namorar'], ['de_fundo', '♡ Romance de fundo']];
+  var MROM_POS = {};
+  if (MROM) MROM_PARTES.forEach(function (p) { var m = {}; (MROM[p[0]] || []).forEach(function (id, i) { m[id] = i + 1; }); MROM_POS[p[0]] = m; });
+  function mromHTML(base) {
+    if (!MROM) return '';
+    var em = {}; base.forEach(function (g) { em[g.i] = g; });
+    var partes = MROM_PARTES.map(function (p) {
+      var l = (MROM[p[0]] || []).map(function (id) { return em[id]; }).filter(Boolean);
+      if (!l.length) return '';
+      var id = 'sec-mrom-' + p[0];
+      LISTAS[id] = l;
+      return '<div class="mrom-parte" data-lista="' + id + '">' + cabSecao(id, p[1], l.length, 'mrom:' + p[0]) + '<div class="grid">' + l.slice(0, POR_SECAO).map(function (g) { return cardHTML(g, false); }).join('') + '</div></div>';
+    }).join('');
+    if (!partes) return '';
+    return '<section class="sec sec-mrom" id="sec-mrom" aria-labelledby="sec-mrom-t"><div class="sec-cab"><h2 id="sec-mrom-t"><span aria-hidden="true">💕</span>Os melhores romances do PC</h2></div>' +
+      '<p class="sec-dsc">Escolhidos a dedo, em três partes: o romance é o jogo, dá pra namorar, ou fica de fundo.</p>' + partes + '</section>';
+  }
+  // ---- ficha de romance (rf) e esforço da tradução (ef) ----
+  var MS_TXT = { so: 'Só do mesmo sexo', opcional: 'Opcional (dá pra escolher)', opc: 'Opcional (dá pra escolher)', nao: 'Não', sim: 'Sim', tambem: 'Também tem' };
+  function valRf(v) {
+    if (v === true) return 'Sim';
+    if (v === false) return 'Não';
+    if (Array.isArray(v)) return v.join(', ');
+    if (typeof v === 'number') return String(v);
+    return MS_TXT[v] || String(v);
+  }
+  function blocoRf(rf) {
+    if (!rf || typeof rf !== 'object') return '';
+    var L = [['pares', 'Quantos pares'], ['escolha', 'O par'], ['casar', 'Dá pra casar'], ['final', 'Final com o par'], ['mesmo_sexo', 'Romance do mesmo sexo'], ['nota', 'Resumo']];
+    var ESC = { livre: 'Você escolhe', fixa: 'Fixo (o jogo decide)' };
+    var d = L.filter(function (x) { return rf[x[0]] != null && rf[x[0]] !== ''; }).map(function (x) {
+      var v = x[0] === 'escolha' ? (ESC[rf.escolha] || rf.escolha) : x[0] === 'mesmo_sexo' && rf.mesmo_sexo === 'nao' ? 'Não tem' : valRf(rf[x[0]]);
+      return '<dt>' + x[1] + '</dt><dd>' + esc(v) + '</dd>';
+    }).join('');
+    return d ? '<div class="f-sec f-rom"><h3>💕 Ficha de romance (sem spoiler)</h3><dl class="dados">' + d + '</dl></div>' : '';
+  }
+  var DIF_TXT = { facil: 'fácil', medio: 'médio', dificil: 'difícil', '?': 'sem estimativa' };
+  function diasTxt(d) {
+    if (d == null) return '';
+    if (d <= 1) return 'uns 1 dia';
+    if (d < 30) return 'uns ' + Math.round(d) + ' dias';
+    if (d < 60) return 'uns 1 mês';
+    return 'uns ' + Math.round(d / 30) + ' meses';
+  }
+  function seloEsforco(g) {
+    if (g.pt || g.ef == null) return '';
+    return '<span class="selo ef ef-' + (g.efd === 'facil' || g.efd === 'medio' || g.efd === 'dificil' ? g.efd : 'nd') + '" title="Traduzir: ' + (DIF_TXT[g.efd] || '?') + '">✍️ ' + diasTxt(g.ef) + '</span>';
+  }
+  function blocoEf(g, f) {
+    var e = f && f.ef && typeof f.ef === 'object' ? f.ef : null;
+    if (g.pt || (!e && g.ef == null)) return '';
+    var dif = (e && e.dif) || g.efd;
+    var d = [];
+    if (e && e.motor) d.push('<dt>Motor</dt><dd>' + esc(e.motor) + '</dd>');
+    d.push('<dt>Dificuldade</dt><dd>' + esc(DIF_TXT[dif] || '?') + '</dd>');
+    if (e && e.palavras) d.push('<dt>Palavras</dt><dd>' + fmtN.format(e.palavras) + '</dd>');
+    d.push('<dt>Tempo</dt><dd>' + esc((e && e.txt) || diasTxt(g.ef)) + '</dd>');
+    if (e && e.pq) d.push('<dt>Por quê</dt><dd>' + esc(e.pq) + '</dd>');
+    return '<div class="f-sec f-ef ef-' + (dif || 'nd') + '"><h3>✍️ Esforço para traduzir</h3><dl class="dados">' + d.join('') + '</dl></div>';
+  }
+  // ---- jogos fora da Steam (itch.io, DLsite, freeware) ----
+  function lojaNome(g) {
+    var l = String(g.loja || '');
+    if (/itch/i.test(l)) return 'itch.io';
+    if (/dlsite/i.test(l)) return 'DLsite';
+    return l && l.length <= 14 ? l : 'Fora da Steam';
+  }
+  function seloLoja(g) { return g.loja ? '<span class="selo loja" title="Jogo fora da Steam">🌐 ' + esc(lojaNome(g)) + '</span>' : ''; }
+
+  // ---- 🎡 Roleta (como a do Switch: de 5 a 10 jogos numa roleta que desacelera) ----
+  var rolDlg = null, rolJogos = [], rolAng = 0, rolGirando = false;
+  var ROL_CORES = ['#3550e0', '#1d7f4f', '#b4245f', '#b26b00', '#6b3fd4', '#0a6e9a', '#a33a34', '#5b8a1e', '#904296', '#25719a'];
+  function sortearRoleta() {
+    var base = BASE_ATUAL.lista.filter(paraVoce).slice(0, 40);
+    if (base.length < 5) base = BASE_ATUAL.lista.slice(0, 40);
+    var n = Math.min(base.length, 5 + Math.floor(Math.random() * 4)), esc_ = base.slice(), r = [];
+    while (r.length < n && esc_.length) r.push(esc_.splice(Math.floor(Math.random() * esc_.length), 1)[0]);
+    return r;
+  }
+  function pintarRoleta(venc) {
+    var n = rolJogos.length, fat = 360 / n;
+    var grad = rolJogos.map(function (g, i) { return ROL_CORES[i % ROL_CORES.length] + ' ' + (i * fat) + 'deg ' + ((i + 1) * fat) + 'deg'; }).join(',');
+    $('rol-corpo').innerHTML = '<div class="rol-palco"><div class="rol-seta" aria-hidden="true">▼</div><div class="rol-roda" id="rol-roda" style="background:conic-gradient(' + grad + ');transform:rotate(' + rolAng + 'deg)">' +
+      rolJogos.map(function (g, i) { return '<span class="rol-num" style="transform:rotate(' + ((i + 0.5) * fat) + 'deg) translateY(-38%)"><b style="transform:rotate(' + (-(i + 0.5) * fat - rolAng) + 'deg)">' + (i + 1) + '</b></span>'; }).join('') + '</div></div>' +
+      '<ol class="rol-lista">' + rolJogos.map(function (g, i) { return '<li' + (venc === i ? ' class="venc"' : '') + '><i style="background:' + ROL_CORES[i % ROL_CORES.length] + '"></i>' + esc(g.n) + '</li>'; }).join('') + '</ol>' +
+      (venc != null ? '<div class="rol-venc"><h3>🎉 Saiu: ' + esc(rolJogos[venc].n) + '</h3><div class="grid">' + cardHTML(rolJogos[venc], false) + '</div></div>' : '') +
+      '<div class="actions"><button type="button" class="btn btn-forte" data-rol="girar"' + (rolGirando ? ' disabled' : '') + '>🎡 Girar</button><button type="button" class="btn" data-rol="outros">Trocar os jogos</button></div>';
+  }
+  function girarRoleta() {
+    if (rolGirando || !rolJogos.length) return;
+    var n = rolJogos.length, fat = 360 / n, alvo = Math.floor(Math.random() * n);
+    // a seta fica no alto: o meio da fatia "alvo" tem de parar em 0 grau
+    var fim = rolAng - (rolAng % 360) + 360 * 5 + (360 - (alvo + 0.5) * fat);
+    var reduz = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    rolGirando = true; pintarRoleta(null);
+    var roda = $('rol-roda');
+    requestAnimationFrame(function () {
+      roda.style.transition = reduz ? 'none' : 'transform 4s cubic-bezier(.17,.67,.2,1)';
+      roda.style.transform = 'rotate(' + fim + 'deg)';
+      setTimeout(function () { rolAng = fim; rolGirando = false; pintarRoleta(alvo); }, reduz ? 50 : 4100);
+    });
+  }
+  function abrirRoleta() {
+    if (!rolDlg) {
+      rolDlg = document.createElement('dialog');
+      rolDlg.id = 'dlg-roleta';
+      rolDlg.setAttribute('aria-labelledby', 'rol-t');
+      rolDlg.innerHTML = '<div class="dc-in"><div class="dc-topo"><h2 id="rol-t">🎡 Roleta da indecisão</h2><button type="button" class="dc-x" data-rol="fechar" aria-label="Fechar">✕</button></div>' +
+        '<p class="fine">De 5 a 8 jogos com a bolinha verde que rodam e você ainda não marcou.</p><div id="rol-corpo"></div></div>';
+      document.body.appendChild(rolDlg);
+      rolDlg.addEventListener('cancel', function (e) { e.preventDefault(); fecharCamada('roleta'); });
+      rolDlg.addEventListener('click', function (e) {
+        if (e.target === rolDlg) { fecharCamada('roleta'); return; }
+        var c = e.target.closest('.card [data-acao]');
+        if (c) { var id = c.closest('.card').dataset.id; if (c.dataset.acao === 'ver') abrirFicha(id, null); else if (c.dataset.acao !== 'pq') marcar(id, c.dataset.acao); return; }
+        var b = e.target.closest('[data-rol]');
+        if (!b) return;
+        if (b.dataset.rol === 'fechar') fecharCamada('roleta');
+        else if (b.dataset.rol === 'girar') girarRoleta();
+        else if (b.dataset.rol === 'outros') { rolJogos = sortearRoleta(); pintarRoleta(null); }
+      });
+    }
+    rolJogos = sortearRoleta();
+    pintarRoleta(null);
+    if (!rolDlg.open) { rolDlg.showModal(); empurrar('roleta'); }
+  }
+
+  // ---- 🤚 Modo uma mão (desligado por padrão): barra embaixo que só aparece ao rolar para cima ----
+  var maoEl = null, maoY = 0;
+  function montarMao() {
+    if (maoEl) return;
+    maoEl = document.createElement('nav');
+    maoEl.className = 'barra-mao'; maoEl.hidden = true; maoEl.setAttribute('aria-label', 'Atalhos perto do polegar');
+    maoEl.innerHTML = '<button type="button" data-mao="buscar">🔎<span>Buscar</span></button><button type="button" data-mao="filtros">⚙<span>Filtros</span></button>' +
+      '<button type="button" data-mao="para">💡<span>Pra você</span></button><button type="button" data-mao="tinder">🃏<span>Avaliar</span></button><button type="button" data-mao="topo">↑<span>Topo</span></button>';
+    document.body.appendChild(maoEl);
+    maoEl.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-mao]');
+      if (!b) return;
+      var k = b.dataset.mao;
+      if (k === 'buscar') { window.scrollTo(0, 0); $('q').focus(); }
+      else if (k === 'filtros') abrirFolha();
+      else if (k === 'para') abrirGrade({ t: 'sec', k: 'para' });
+      else if (k === 'tinder') abrirTinder();
+      else window.scrollTo(0, 0);
+    });
+  }
+  function pintarBotoesAj() {
+    $('b-mao').textContent = '🤚 Uma mão: ' + (AJ.mao ? 'ligado' : 'desligado');
+    $('b-mao').setAttribute('aria-pressed', String(!!AJ.mao));
+    $('b-tamcapa').textContent = '🖼 Capas ' + ({ p: 'pequenas', m: 'médias', g: 'grandes' }[AJ.capas || 'm']);
+    document.documentElement.dataset.capas = AJ.capas || 'm';
+    if (!AJ.mao && maoEl) maoEl.hidden = true;
+    document.body.classList.toggle('mao-on', !!AJ.mao);
+  }
+  window.addEventListener('scroll', function () {
+    var y = window.scrollY, sobe = y < maoY - 4, desce = y > maoY + 4;
+    if (AJ.mao) {
+      montarMao();
+      if (y < 300 || desce) maoEl.hidden = true; else if (sobe) maoEl.hidden = false;
+      document.body.classList.toggle('mao-vis', !maoEl.hidden);
+    }
+    if (Math.abs(y - maoY) > 4) maoY = y;
+  }, { passive: true });
+
+  // ---- gestos na grade: arrastar a capa para a direita = estrela; para a esquerda = dispensa (com desfazer) ----
+  var gesto = null, engolirClique = false;
+  $('conteudo').addEventListener('pointerdown', function (e) {
+    var capa = e.target.closest('.grid .capa');
+    if (!capa || e.button > 0 || e.target.closest('.fav,.inst')) return;
+    gesto = { el: capa.closest('.card'), x: e.clientX, y: e.clientY, dx: 0, ativo: false, id: e.pointerId };
+  });
+  $('conteudo').addEventListener('pointermove', function (e) {
+    if (!gesto || e.pointerId !== gesto.id) return;
+    var dx = e.clientX - gesto.x, dy = e.clientY - gesto.y;
+    if (!gesto.ativo) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { gesto = null; return; }
+      if (Math.abs(dx) < 14) return;
+      gesto.ativo = true; gesto.el.classList.add('arrastando');
+    }
+    gesto.dx = dx;
+    gesto.el.style.transform = 'translateX(' + dx + 'px) rotate(' + (dx / 40) + 'deg)';
+    gesto.el.dataset.gesto = dx > 60 ? 'estrela' : dx < -60 ? 'dispensa' : '';
+  });
+  function soltarGesto() {
+    if (!gesto) return;
+    var gs = gesto; gesto = null;
+    if (!gs.ativo) return;
+    engolirClique = true; setTimeout(function () { engolirClique = false; }, 300);
+    gs.el.classList.remove('arrastando'); gs.el.style.transform = ''; delete gs.el.dataset.gesto;
+    var id = gs.el.dataset.id, g = POR_ID[id];
+    if (!g) return;
+    if (gs.dx > 80) {
+      var tinha = !!M.int[id];
+      if (!tinha) marcar(id, 'int');
+      aviso('★ Estrela em ' + g.n, tinha ? null : function () { if (M.int[id]) marcar(id, 'int'); });
+    } else if (gs.dx < -80) {
+      var antes = M.plano[id];
+      if (antes !== 'nao') marcar(id, 'nao');
+      aviso('✕ Dispensado: ' + g.n, function () { if (antes) M.plano[id] = antes; else delete M.plano[id]; salvar(); atualizarCardsDom(id); atualizarAbas(); });
+    }
+  }
+  $('conteudo').addEventListener('pointerup', soltarGesto);
+  $('conteudo').addEventListener('dragstart', function (e) { if (e.target.closest && e.target.closest('.capa')) e.preventDefault(); });
+  $('conteudo').addEventListener('pointercancel', function () { if (gesto && gesto.el) { gesto.el.classList.remove('arrastando'); gesto.el.style.transform = ''; } gesto = null; });
+  $('conteudo').addEventListener('click', function (e) { if (engolirClique) { e.stopPropagation(); e.preventDefault(); engolirClique = false; } }, true);
 
   // ---------------- eventos ----------------
   $('conteudo').addEventListener('click', function (e) {
@@ -1252,53 +2025,63 @@
     if (!b) return;
     var c = b.closest('.card'), id = c && c.dataset.id;
     if (!id) return;
-    if (b.dataset.acao === 'ver') abrirFicha(id); else marcar(id, b.dataset.acao);
+    if (b.dataset.acao === 'ver') {
+      var sec = c.closest('[data-lista]');
+      abrirFicha(id, V.modo === 'grade' ? ATUAL : sec ? LISTAS[sec.dataset.lista] || null : null);
+    } else if (b.dataset.acao === 'pq') mostrarPq(c);
+    else if (b.dataset.acao === 'voto') votar(id, +b.dataset.v);
+    else marcar(id, b.dataset.acao);
   });
-  // capa que não carregou: tenta a original; se também falhar, fica o bloco com a cor do gênero e o nome
+  // capa que não carregou: fica o bloco com a cor do gênero e o nome
   document.addEventListener('error', function (e) {
     var t = e.target;
     if (!t || t.tagName !== 'IMG') return;
-    if (/(^| )(capa|f-capa|t-img|f-fundo|t-fundo)( |$)/.test(t.className)) t.remove();
+    if (/(^| )(ci|f-capa|t-img|f-fundo|t-fundo)( |$)/.test(t.className)) t.remove();
   }, true);
 
   document.addEventListener('click', function (e) {
-    var b = e.target.closest('[data-gen],[data-aba],[data-limpar],[data-tirar]');
-    if (!b || TT.contains(b) || dlg.contains(b)) return;
-    if (b.dataset.gen != null && b.hasAttribute('data-gen')) {
-      if (b.dataset.gen === '') { if (V.modo === 'grade') fecharCamada('grade'); else rolarPara($('conteudo')); }
-      else irGenero(b.dataset.gen);
-    } else if (b.dataset.aba) abrirGrade({ t: 'aba', k: b.dataset.aba });
+    var b = e.target.closest('[data-gen],[data-nv],[data-aba],[data-limpar],[data-tirar],[data-ordem],#gens-mais');
+    if (!b || TT.contains(b) || dlg.contains(b) || folha.contains(b)) return;
+    if (b.id === 'gens-mais') {
+      gensAberto = !gensAberto;
+      $('gens').classList.toggle('fechado', !gensAberto);
+      b.setAttribute('aria-expanded', String(gensAberto));
+      b.textContent = gensAberto ? 'Menos gêneros ▴' : 'Ver os ' + GEN_ORDER.length + ' gêneros ▾';
+    } else if (b.hasAttribute('data-gen')) abrirGrade({ t: 'gen', k: b.dataset.gen });
+    else if (b.hasAttribute('data-nv')) abrirGrade({ t: 'nivel', k: +b.dataset.nv });
+    else if (b.dataset.aba) abrirGrade({ t: 'aba', k: b.dataset.aba });
     else if (b.dataset.tirar) tirarFiltro(b.dataset.tirar);
+    else if (b.dataset.ordem) { F.ordem = b.dataset.ordem; desenhar(false); }
     else if (b.dataset.limpar) limpar();
   });
   $('b-voltar').addEventListener('click', function () { fecharCamada('grade'); });
+  $('b-todos').addEventListener('click', function () { abrirGrade({ t: 'todos' }); });
   $('seg-pc').addEventListener('click', function (e) {
     var b = e.target.closest('[data-pc]');
     if (!b || b.dataset.pc === F.pc) return;
     F.pc = b.dataset.pc; AJ.pc = F.pc; salvarAj();
     montarPCs(); redesenharFiltros(); atualizarDisco();
   });
-  $('tiles').addEventListener('click', function (e) {
-    var b = e.target.closest('.tile');
-    if (!b) return;
-    var n = +b.dataset.nv;
-    if (V.modo === 'grade' && V.fonte.t === 'nivel' && V.fonte.k === n) fecharCamada('grade');
-    else abrirGrade({ t: 'nivel', k: n });
-  });
-  $('f-idioma').addEventListener('change', function () { F.idioma = this.value; sincronizarCampos(); redesenharFiltros(); });
-  $('f-ordem').addEventListener('change', function () { F.ordem = this.value; sincronizarCampos(); redesenharFiltros(); });
-  [['c-rom', 'rom'], ['c-18', 'esc18'], ['c-vet', 'escVet'], ['c-nao', 'naoRoda'], ['c-ctrl', 'ctrl']].forEach(function (p) {
-    $(p[0]).addEventListener('change', function () { F[p[1]] = this.checked; redesenharFiltros(); });
-  });
-  function abrirFiltros(ab) {
-    $('painel-filtros').hidden = !ab;
-    $('b-filtros').setAttribute('aria-expanded', String(ab));
-  }
-  $('b-filtros').addEventListener('click', function () { abrirFiltros($('painel-filtros').hidden); });
-  $('b-pronto').addEventListener('click', function () { abrirFiltros(false); });
+  $('b-filtros').addEventListener('click', abrirFolha);
   $('mais').addEventListener('click', mostrarMais);
   $('b-tinder').addEventListener('click', abrirTinder);
+  $('b-pravoce').addEventListener('click', function () { abrirGrade({ t: 'sec', k: 'para' }); });
   $('b-marc').addEventListener('click', function () { rolarPara($('marcacoes')); });
+  $('b-pcs').addEventListener('click', function () { rolarPara($('painel-pc')); });
+  $('b-sync').addEventListener('click', function () { rolarPara($('sync')); });
+  $('b-capas2').addEventListener('click', abrirCapas);
+  $('b-gosto').addEventListener('click', abrirGosto);
+  $('b-roleta').addEventListener('click', abrirRoleta);
+  $('b-mao').addEventListener('click', function () { AJ.mao = !AJ.mao; salvarAj(); pintarBotoesAj(); if (AJ.mao) aviso('🤚 Modo uma mão ligado: os botões aparecem embaixo quando você rola para cima.', null); });
+  $('b-tamcapa').addEventListener('click', function () { AJ.capas = { p: 'm', m: 'g', g: 'p' }[AJ.capas || 'm']; salvarAj(); pintarBotoesAj(); });
+  // atalhos: no celular os extras ficam atrás do "··· Mais" (como no Switch)
+  function pintarAtalhos() {
+    var nav = $('atalhos'), ab = nav.classList.contains('aberto');
+    var n = nav.querySelectorAll('.at-extra:not([hidden])').length;
+    $('b-at-mais').textContent = ab ? 'Menos ▴' : '··· Mais ' + n;
+    $('b-at-mais').setAttribute('aria-expanded', String(ab));
+  }
+  $('b-at-mais').addEventListener('click', function () { $('atalhos').classList.toggle('aberto'); pintarAtalhos(); });
   $('b-desmarcar').addEventListener('click', function () {
     var ids = Object.keys(M.inst);
     if (!ids.length) return;
@@ -1310,16 +2093,20 @@
   $('b-exportar').addEventListener('click', exportar);
   $('f-importar').addEventListener('change', function () { if (this.files[0]) importar(this.files[0]); this.value = ''; });
 
+  // tema: segue o aparelho até alguém escolher; o botão alterna claro e escuro
+  var mqEscuro = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function escuroAgora() { return AJ.tema === 'escuro' || (AJ.tema !== 'claro' && !!(mqEscuro && mqEscuro.matches)); }
   function aplicarTema() {
-    var claro = AJ.tema === 'claro';
-    document.documentElement.dataset.theme = claro ? 'light' : 'dark';
-    var b = $('b-tema');
-    b.setAttribute('aria-pressed', String(claro));
-    b.textContent = claro ? '🌙 Tema escuro' : '☀ Tema claro';
+    var h = document.documentElement;
+    if (AJ.tema === 'claro') h.dataset.theme = 'light'; else if (AJ.tema === 'escuro') h.dataset.theme = 'dark'; else delete h.dataset.theme;
+    var esc_ = escuroAgora(), b = $('b-tema');
+    b.setAttribute('aria-pressed', String(!esc_));
+    b.textContent = esc_ ? '☀ Tema claro' : '🌙 Tema escuro';
     var m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.content = claro ? '#e6ecf2' : '#171a21';
+    if (m) m.content = esc_ ? '#0d1219' : '#eef1f5';
   }
-  $('b-tema').addEventListener('click', function () { AJ.tema = AJ.tema === 'claro' ? 'escuro' : 'claro'; salvarAj(); aplicarTema(); });
+  $('b-tema').addEventListener('click', function () { AJ.tema = escuroAgora() ? 'claro' : 'escuro'; salvarAj(); aplicarTema(); });
+  if (mqEscuro && mqEscuro.addEventListener) mqEscuro.addEventListener('change', aplicarTema);
 
   document.addEventListener('keydown', function (e) {
     if (!TT.hidden && !dlg.open) {
@@ -1330,84 +2117,79 @@
       else if (e.key === 'Escape') { e.preventDefault(); fecharCamada('tinder'); }
       return;
     }
-    if (e.key === '/' && !dlg.open && !dlgC.open && !/INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) {
+    if (dlg.open && !/INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) {
+      if (e.key === 'ArrowRight') { andarFicha(1); return; }
+      if (e.key === 'ArrowLeft') { andarFicha(-1); return; }
+    }
+    if (e.key === '/' && !dlg.open && !dlgC.open && !folha.open && !/INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) {
       e.preventDefault(); $('q').focus();
     }
   });
 
-  // altura real da barra fixa (para as seções pararem logo abaixo dela)
-  function medirTopo() { document.documentElement.style.setProperty('--topo-h', Math.round(topoH()) + 'px'); }
-  if (window.ResizeObserver) new ResizeObserver(medirTopo).observe($('barra-topo'));
-  window.addEventListener('resize', medirTopo);
-
-  // "↑ Topo": aparece depois de rolar um pouco e leva de volta à busca e aos gêneros
+  // "↑": aparece depois de rolar um pouco e leva de volta à busca (nada fica preso no topo)
   var bSubir = $('b-subir'), subirPend = false;
   window.addEventListener('scroll', function () {
     if (subirPend) return;
     subirPend = true;
     setTimeout(function () { subirPend = false; bSubir.hidden = window.scrollY < 700; }, 150);
   }, { passive: true });
-  bSubir.addEventListener('click', function () { $('barra-topo').scrollIntoView({ block: 'start' }); $('q').focus({ preventScroll: true }); });
+  bSubir.addEventListener('click', function () { window.scrollTo(0, 0); });
 
   // ---------------- início ----------------
   // o app sempre abre no catálogo completo: busca e filtros começam vazios (o navegador às vezes devolve o texto da busca)
   $('q').value = '';
-  sincronizarCampos();
   if (!podeSalvar) $('aviso-salvar').hidden = false;
+  $('n-gens').textContent = GEN_ORDER.length;
   aplicarTema();
   montarMeta();
   montarPCs();
   montarAbas();
   atualizarDisco();
   desenhar(false);
-  medirTopo();
+  pintarAtalhos();
+  pintarBotoesAj();
+  // atalhos do ícone do app (manifest: ?abrir=tinder | roleta | buscar)
+  (function () {
+    var m = /[?&]abrir=(\w+)/.exec(location.search), q = m && m[1];
+    if (!q) return;
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    if (q === 'buscar') { setTimeout(function () { $('q').focus(); }, 300); return; }
+    (function esperar() {
+      if (fila.length || !JOGOS.length) { setTimeout(esperar, 300); return; }
+      setTimeout(function () { if (q === 'tinder') abrirTinder(); else if (q === 'roleta') abrirRoleta(); }, 700);
+    })();
+  })();
+  if (window.MutationObserver) new MutationObserver(pintarAtalhos).observe($('atalhos'), { subtree: true, attributes: true, attributeFilter: ['hidden'] });
   if (!ARQS.length) $('mostrando').textContent = 'Nenhum arquivo de dados encontrado.';
   pedirLista();
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
   }
 
-  // ---------------- ganchos para a sincronização (sync.js) ----------------
+  // ---------------- ganchos para a sincronização (bloco 1.8) e para os testes ----------------
   window.ESTANTE_PC = {
     // a nuvem mudou as marcações: relê do localStorage e redesenha, sem recarregar a página
     recarregarMarcas: function () {
       var n = lerJSON(CHAVE, {});
-      M.int = n.int || {}; M.inst = n.inst || {}; M.plano = n.plano || {};
+      M.int = n.int || {}; M.inst = n.inst || {}; M.plano = n.plano || {}; M.voto = n.voto || {}; M.gosto = n.gosto || {};
+      recalcGosto();
       if (V.modo === 'catalogo') comAncora(function () { desenhar(true); }); else desenhar(true);
       atualizarDisco(); atualizarAbas();
       if (dlg.open && fichaId != null && POR_ID[fichaId]) {
-        var g = POR_ID[fichaId], p = dlg.querySelector('.planos'), s = dlg.querySelector('.f-tit .selos');
-        if (p) p.outerHTML = planosHTML(g);
-        if (s) s.innerHTML = selosTodos(g, true);
+        var p = dlg.querySelector('.planos');
+        if (p) p.outerHTML = planosHTML(POR_ID[fichaId]);
       }
     },
     marcar: function (id, k) { marcar(String(id), k); }, // o mesmo caminho dos botões (usado nos testes)
-    marcas: function () { return JSON.parse(JSON.stringify(M)); }
+    marcas: function () { return JSON.parse(JSON.stringify(M)); },
+    // para os testes: estado e atalhos
+    estado: function () { return { jogos: JOGOS.length, fila: fila.length, modo: V.modo, fonte: V.fonte, F: JSON.parse(JSON.stringify(F)), atual: ATUAL.length }; },
+    abrirGrade: abrirGrade, abrirFicha: abrirFicha, abrirFolha: abrirFolha,
+    filtro: function (k, v) { F[k] = v; redesenharFiltros(); },
+    lista: function (fo) { var r = filtrar(fo || { t: 'todos' }); ordenar(r.lista, fo); return r.lista.map(function (g) { return [g.i, g.n, pvDe(g), corDe(g), g.g]; }); },
+    gosto: function () { var d = 0, ex = []; JOGOS.forEach(function (g) { if (g._px && !g.x && g._pv !== g.pv) { d++; if (ex.length < 5) ex.push([g.n, g.pv, g._pv, g._s]); } }); return { diferentes: d, ex: ex }; },
+    votar: votar, abrirGosto: abrirGosto, abrirRoleta: abrirRoleta, linhaPq: function (id) { return linhaPq(POR_ID[id]); }
   };
-})();
-
-/* 1.7.5 (26/11): no celular os chips de gênero ficam em 2 linhas; o botão abre e fecha o resto */
-(function () {
-  var g = document.getElementById('gens');
-  if (!g || !window.matchMedia) return;
-  var mq = window.matchMedia('(max-width: 699px)');
-  var b = document.createElement('button');
-  b.type = 'button'; b.className = 'gens-mais'; b.setAttribute('aria-controls', 'gens');
-  g.parentNode.insertBefore(b, g.nextSibling);
-  var aberto = false;
-  function pintar() {
-    var cel = mq.matches;
-    g.classList.toggle('fechado', cel && !aberto);
-    b.hidden = !cel || (!aberto && g.scrollHeight <= 80);
-    b.textContent = aberto ? 'Menos gêneros ▴' : 'Todos os gêneros (' + g.children.length + ') ▾';
-    b.setAttribute('aria-expanded', String(aberto));
-  }
-  b.addEventListener('click', function () { aberto = !aberto; pintar(); });
-  // ao tocar num gênero, fecha de novo (a página já desce até ele)
-  g.addEventListener('click', function (e) { if (aberto && e.target.closest('button')) { aberto = false; setTimeout(pintar, 0); } });
-  if (mq.addEventListener) mq.addEventListener('change', pintar);
-  if (window.MutationObserver) new MutationObserver(pintar).observe(g, { childList: true });
-  pintar();
 })();
 
 /* 1.7.6 (26/11): o site não fica preso numa versão velha.
@@ -1483,15 +2265,20 @@
     Object.keys(o.int || {}).forEach(function (id) { if (o.int[id]) r['int|' + id] = 1; });
     Object.keys(o.inst || {}).forEach(function (id) { if (o.inst[id]) r['inst|' + id] = 1; });
     Object.keys(o.plano || {}).forEach(function (id) { if (PLANOS[o.plano[id]]) r['pl|' + id] = o.plano[id]; });
+    // 1.10: "Me ensina" (vt|id = 1 ou -1) e "Ajustar o gosto" (gs|grupo = peso)
+    Object.keys(o.voto || {}).forEach(function (id) { if (o.voto[id] === 1 || o.voto[id] === -1) r['vt|' + id] = o.voto[id]; });
+    Object.keys(o.gosto || {}).forEach(function (k) { if (typeof o.gosto[k] === 'number') r['gs|' + k] = o.gosto[k]; });
     return r;
   }
   function montar(vivos) {
-    var o = { int: {}, inst: {}, plano: {} };
+    var o = { int: {}, inst: {}, plano: {}, voto: {}, gosto: {} };
     Object.keys(vivos).forEach(function (s) {
       var i = s.indexOf('|'), tipo = s.slice(0, i), id = s.slice(i + 1);
       if (tipo === 'int') o.int[id] = 1;
       else if (tipo === 'inst') o.inst[id] = 1;
       else if (tipo === 'pl' && PLANOS[vivos[s]]) o.plano[id] = vivos[s];
+      else if (tipo === 'vt' && (+vivos[s] === 1 || +vivos[s] === -1)) o.voto[id] = +vivos[s];
+      else if (tipo === 'gs' && !isNaN(+vivos[s])) o.gosto[id] = +vivos[s];
     });
     return JSON.stringify(o);
   }
