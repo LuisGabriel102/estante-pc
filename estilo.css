@@ -437,3 +437,24 @@ html.t-aberto { overflow: hidden; }
 }
 /* 1.7.6: aviso de versão nova (some sozinho quando toca) */
 .aviso-versao { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(68px + env(safe-area-inset-bottom)); z-index: 30; max-width: calc(100% - 24px); font: inherit; font-weight: 600; font-size: 14px; color: var(--accent-ink); background: var(--accent); border: 0; border-radius: 999px; padding: 10px 18px; box-shadow: 0 6px 24px rgba(0,0,0,.45); cursor: pointer; }
+
+/* 1.8: sincronizar PC e celular (bloco em "Minhas marcações" e selinho no topo quando der erro) */
+.sync { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.sync > * { min-width: 0; margin: 0; }
+.sync h3 { font-size: 16px; }
+.sync-st { font-weight: 600; color: var(--muted); }
+.sync-st[data-fase="ok"] { color: var(--t4); }
+.sync-st[data-fase="offline"] { color: var(--warn); }
+.sync-st[data-fase="token"], .sync-st[data-fase="erro"] { color: var(--veto); }
+.sync-passos { margin: 0; padding-left: 22px; display: grid; gap: 6px; font-size: 14px; }
+.sync-passos a, .sync p a { color: var(--accent); font-weight: 600; }
+.sync-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; align-items: center; }
+.sync-form label { grid-column: 1 / -1; font-weight: 600; font-size: 14px; }
+.sync-form input { min-width: 0; min-height: 44px; padding: 8px 12px; font: inherit; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); }
+.sync-mask { font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: var(--surface); padding: 1px 6px; border-radius: 6px; }
+.sync-sair { color: var(--veto); }
+.sync-selo { border-color: var(--veto) !important; color: var(--veto) !important; background: var(--veto-bg) !important; }
+
+/* 1.9: botão "📲 Instalar app" e a dica do iPhone */
+#b-instalar { border-color: var(--accent); color: var(--accent); }
+.dica-instalar { grid-column: 1 / -1; margin: 0; padding: 8px 12px; font-size: 14px; border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; }

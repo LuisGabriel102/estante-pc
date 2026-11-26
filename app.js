@@ -5,7 +5,7 @@
    dados/ficha_NN.js só quando alguém abre um jogo daquele arquivo.
    Marcações ficam no localStorage ("estante-pc-v1"). Entre visitas só ficam guardados o PC escolhido e o tema:
    filtros, busca e aba SEMPRE começam do zero (o app nunca abre mostrando só uma parte).
-   As capas usam a versão pequena do wsrv.nl; o sw.js guarda toda imagem vista (Cache Storage). */
+   As capas são as originais da Steam (460x215); o '📦 Guardar capas' baixa pacotes de WebP e o sw.js guarda toda imagem vista. */
 (function () {
   'use strict';
 
@@ -50,8 +50,8 @@
   function noPC(k) { var n = (PCS[k] && PCS[k].nome) || k; return /^Meu /.test(n) ? 'no m' + n.slice(1) : 'no ' + n; }
   function pctMeta(t) { var p = 100 * t / TOTAL_STEAM; return p < 1 ? fmtPct2.format(p) : fmtPct.format(p); }
   function cada(sel, fn) { Array.prototype.forEach.call(document.querySelectorAll(sel), fn); }
-  // capa pequena (uns 6 KB) pelo wsrv.nl; a original fica de reserva
-  function urlMini(c) { return 'https://wsrv.nl/?url=' + encodeURIComponent(BASE.replace('https://', '') + c) + '&w=300&output=webp&q=70'; }
+  // a capa original da Steam: é também a chave da WebP guardada pelos pacotes de capas (o sw.js entrega a guardada)
+  function urlCapa(c) { return BASE + c; }
 
   // ---------------- marcações e ajustes ----------------
   var M = lerJSON(CHAVE, {});
@@ -62,6 +62,8 @@
   function salvar() {
     try { localStorage.setItem(CHAVE, JSON.stringify({ int: M.int, inst: M.inst, plano: M.plano })); }
     catch (e) { podeSalvar = false; $('aviso-salvar').hidden = false; }
+    // avisa a sincronização (sync.js) que as marcações mudaram
+    try { if (window.SYNC_PC) window.SYNC_PC.mudou(); } catch (e) {}
   }
   function salvarAj() { try { localStorage.setItem(CHAVE_AJ, JSON.stringify({ pc: AJ.pc, tema: AJ.tema })); } catch (e) {} }
 
@@ -355,7 +357,7 @@
     if (!g.c) return '';
     var o = BASE + esc(g.c);
     return '<img class="' + classe + '" loading="lazy" decoding="async" width="460" height="215" alt="Capa de ' + esc(g.n) + '" src="' +
-      (pequena ? esc(urlMini(g.c)) + '" data-orig="' + o : o) + '">';
+      o + '">';
   }
   // a frase "por que é a sua cara" vem na ficha (pq); aceita também no jogo, se um dia vier
   function pqDe(g) { return g.pq || (FICHAS[g.i] && FICHAS[g.i].pq) || ''; }
@@ -738,7 +740,7 @@
     var gen = (CONF.gen || {})[g.g] || '';
     var h = '<div class="f-in">';
     h += '<button type="button" class="f-x" data-f="fechar" aria-label="Fechar a ficha">✕</button>';
-    h += '<div class="f-heroi" style="--gc:' + cor + '">' + (g.c ? '<img class="f-fundo" alt="" aria-hidden="true" src="' + esc(urlMini(g.c)) + '">' : '') +
+    h += '<div class="f-heroi" style="--gc:' + cor + '">' + (g.c ? '<img class="f-fundo" alt="" aria-hidden="true" src="' + esc(urlCapa(g.c)) + '">' : '') +
       '<div class="f-capa-box"><span class="capa-sem" aria-hidden="true">' + esc(g.n) + '</span>' + imgCapa(g, 'f-capa', false) + '</div></div>';
     h += '<div class="f-tit"><h2 id="f-nome">' + esc(g.n) + '</h2><p class="f-gen">' + esc([gen, g.a, g.em_breve ? 'ainda não lançado' : ''].filter(Boolean).join(' · ')) + '</p>' +
       '<div class="selos">' + selosTodos(g, true) + '</div></div>';
@@ -876,7 +878,7 @@
       return '<div class="t-pc nv' + (v[i] || 0) + '"><b>' + esc(PCS[k].nome) + ': ' + NIVEL[v[i] || 0].nome + '</b>' + (mo ? '<span>' + esc(mo) + '</span>' : '') + '</div>';
     }
     return '<div class="t-card ' + classe + '" data-id="' + g.i + '" style="--gc:' + (COR_GEN[g.g] || COR_GEN.outro) + '">' +
-      '<div class="t-capa">' + (g.c ? '<img class="t-fundo" alt="" aria-hidden="true" src="' + esc(urlMini(g.c)) + '">' : '') +
+      '<div class="t-capa">' + (g.c ? '<img class="t-fundo" alt="" aria-hidden="true" src="' + esc(urlCapa(g.c)) + '">' : '') +
         '<div class="t-capa-box"><span class="capa-sem" aria-hidden="true">' + esc(g.n) + '</span>' + imgCapa(g, 't-img', false) + '</div>' +
         '<span class="t-carimbo t-c-sim">QUERO</span><span class="t-carimbo t-c-nao">NÃO</span><span class="t-carimbo t-c-int">☆ INTERESSE</span>' +
       '</div>' +
@@ -972,65 +974,106 @@
     else decidirT(k);
   });
 
-  // ---------------- guardar capas no aparelho ----------------
+  // ---------------- guardar capas no aparelho (pacotes) ----------------
+  // As capas vêm em PACOTES (um por lista_NN.js) do repositório estante-pc-capas: capas.json + capas_NN.bin.
+  // Cada .bin = uint32 LE com o tamanho L do cabeçalho + L bytes de JSON {"itens": [[appid, "c", início, tamanho], ...]}
+  // + as imagens WebP (o início conta a partir de 4 + L). Cada capa é guardada no cache "epc-img-v1" com a chave
+  // BASE + c (a mesma URL da Steam que o card pede): o sw.js entrega a WebP guardada (cache primeiro).
   var dlgC = $('dlg-capas');
-  var GC = { fila: [], i: 0, ok: 0, ja: 0, erro: 0, ativos: 0, rodando: false, pausado: false, escopo: null, cache: null, quadro: 0 };
+  var K_PAC = CHAVE + '-capas-pacotes';           // {n: {h: hash, cheio: true/false}} dos pacotes já guardados
+  var CAPAS_URL = 'https://luisgabriel102.github.io/estante-pc-capas/';
+  try { var cbT = localStorage.getItem(CHAVE + '-capas-base'); if (cbT && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/$/.test(cbT)) CAPAS_URL = cbT; } catch (e) {} // só teste
+  var GC = { rodando: false, pausado: false, ctl: null, fila: [], i: 0, escopo: null, total: 0, feito: 0, capas: 0, msg: '', quadro: 0, indice: null };
   var temCache = typeof caches !== 'undefined' && window.isSecureContext;
 
-  function escopoLista(k) {
-    var l = JOGOS.filter(function (g) {
+  function lerPac() { var o = lerJSON(K_PAC, {}); return o && typeof o === 'object' ? o : {}; }
+  function gravarPac(o) { try { localStorage.setItem(K_PAC, JSON.stringify(o)); } catch (e) {} }
+  function escopoJogos(k) {
+    return JOGOS.filter(function (g) {
       if (!g.c) return false;
       if (k === 'rodam') return nv(g) >= 3;
       if (k && k.indexOf('gen:') === 0) return g.g === k.slice(4);
       return true;
     });
-    l.sort(function (a, b) { return a.o - b.o; });
-    return l.map(function (g) { return { mini: urlMini(g.c), orig: BASE + g.c }; });
   }
   function montarEscopos() {
     var sel = $('dc-escopo'), atual = sel.value || GC.escopo || 'tudo';
     var gs = porGenero(JOGOS);
     var rodam = JOGOS.filter(function (g) { return g.c && nv(g) >= 3; }).length;
-    sel.innerHTML = '<option value="tudo">Todas as capas (' + fmtN.format(JOGOS.length) + ')</option>' +
+    var mbTudo = GC.indice ? GC.indice.pacotes.reduce(function (s, p) { return s + (p.mb || 0); }, 0) : 0;
+    sel.innerHTML = '<option value="tudo">Todas as capas (' + fmtN.format(JOGOS.length) + (mbTudo ? ' · ~' + fmtGB.format(mbTudo) + ' MB' : '') + ')</option>' +
       '<option value="rodam">Só as que rodam ' + (F.pc === 'dois' ? 'em algum PC' : noPC(F.pc)) + ' (' + fmtN.format(rodam) + ')</option>' +
       gs.map(function (x) { return '<option value="gen:' + esc(x.k) + '">' + esc((CONF.gen || {})[x.k] || x.k) + ' (' + fmtN.format(x.lista.length) + ')</option>'; }).join('');
     sel.value = atual;
     if (sel.value !== atual) sel.value = 'tudo';
   }
-  function contarGuardadas() {
-    if (!temCache || GC.rodando) return;
-    var urls = escopoLista($('dc-escopo').value);
-    caches.open(CACHE_IMG).then(function (c) { return c.keys(); }).then(function (ks) {
-      var s = new Set(ks.map(function (r) { return r.url; }));
-      var n = urls.filter(function (u) { return s.has(u.mini); }).length;
-      if (GC.rodando) return;
-      pintarGC(n, urls.length, n === urls.length && urls.length ? 'Todas já estão guardadas neste aparelho.' : fmtN.format(n) + ' de ' + fmtN.format(urls.length) + ' já estão guardadas.');
-    }).catch(function () {});
+  function buscarIndice() {
+    if (GC.indice) return Promise.resolve(GC.indice);
+    return fetch(CAPAS_URL + 'capas.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).then(function (o) {
+      if (!o || !Array.isArray(o.pacotes)) throw new Error('formato');
+      GC.indice = o; return o;
+    });
   }
-  function pintarGC(feitas, total, txt) {
-    var pct = total ? 100 * feitas / total : 0;
+  // quais pacotes baixar para este escopo: os que têm algum jogo do escopo que ainda não está no cache
+  // (pacote já guardado inteiro com o mesmo hash é pulado; se o hash mudou, baixa de novo)
+  function planejar(k) {
+    var jogos = escopoJogos(k), porPac = {};
+    jogos.forEach(function (g) { (porPac[g.f] = porPac[g.f] || []).push(g); });
+    return Promise.all([buscarIndice(), caches.open(CACHE_IMG).then(function (c) { return c.keys(); })]).then(function (r) {
+      var ind = r[0], tem = new Set(r[1].map(function (q) { return q.url; })), reg = lerPac(), plano = [], guardadas = 0;
+      jogos.forEach(function (g) { if (tem.has(BASE + g.c)) guardadas++; });
+      ind.pacotes.forEach(function (p) {
+        var meus = porPac[p.n] || [];
+        if (!meus.length) return;
+        var rp = reg[p.n], faltam = meus.filter(function (g) { return !tem.has(BASE + g.c); }).length;
+        var hashNovo = rp && rp.h && rp.h !== p.h;
+        if (rp && rp.h === p.h && rp.cheio) return;          // já guardado inteiro, mesmo hash
+        if (!faltam && !hashNovo) return;
+        plano.push({ p: p, ids: k === 'tudo' ? null : new Set(meus.map(function (g) { return g.i; })), faltam: faltam });
+      });
+      return { plano: plano, jogos: jogos.length, guardadas: guardadas };
+    });
+  }
+  function pintarGC(pct, txt) {
     var m = $('dc-meter');
-    m.querySelector('.fill').style.width = pct.toFixed(1) + '%';
+    m.querySelector('.fill').style.width = Math.max(0, Math.min(100, pct)).toFixed(1) + '%';
     m.setAttribute('aria-valuenow', Math.round(pct));
     $('dc-txt').textContent = txt;
     var b = $('b-capas');
     b.classList.toggle('baixando', GC.rodando);
     b.textContent = GC.rodando ? '📦 ' + Math.floor(pct) + '%' : '📦 Guardar capas';
+    $('dc-baixar').hidden = GC.rodando;
+    $('dc-pausar').hidden = !GC.rodando;
+    $('dc-baixar').textContent = !GC.rodando && GC.i > 0 && GC.i < GC.fila.length ? 'Continuar' : 'Baixar';
   }
   function uiGC() {
     if (GC.quadro) return;
     GC.quadro = setTimeout(function () {
       GC.quadro = 0;
-      var feitas = GC.ok + GC.ja + GC.erro, total = GC.fila.length;
-      var txt = fmtN.format(feitas) + ' de ' + fmtN.format(total) + ' · ' + fmtN.format(GC.ok) + ' baixadas agora · ' + fmtN.format(GC.ja) + ' já estavam guardadas' +
-        (GC.erro ? ' · ' + fmtN.format(GC.erro) + ' falharam' : '') +
-        (GC.semWsrv ? ' · o serviço das capas pequenas recusou, então guardei as originais da Steam (maiores)' : '') +
-        (GC.rodando ? (GC.pausado ? ' · pausando…' : '') : (feitas >= total ? ' · pronto!' : ' · pausado'));
-      pintarGC(feitas, total, txt);
-      $('dc-baixar').hidden = GC.rodando;
-      $('dc-baixar').textContent = !GC.rodando && GC.i > 0 && GC.i < total ? 'Continuar' : 'Baixar';
-      $('dc-pausar').hidden = !GC.rodando;
+      var pct = GC.total ? 100 * GC.feito / GC.total : 0, atual = GC.fila[GC.i];
+      var txt = GC.msg || (GC.rodando && atual
+        ? 'Pacote ' + (GC.i + 1) + ' de ' + GC.fila.length + ': ' + fmtGB.format(GC.feito / 1048576) + ' de ' + fmtGB.format(GC.total / 1048576) + ' MB · ' + fmtN.format(GC.capas) + ' capas guardadas'
+        : '');
+      pintarGC(pct, txt);
     }, 120);
+  }
+  function contarGuardadas() {
+    if (!temCache || GC.rodando) return;
+    var k = $('dc-escopo').value;
+    $('dc-txt').textContent = 'Conferindo o que já está guardado…';
+    planejar(k).then(function (r) {
+      if (GC.rodando) return;
+      var mbs = r.plano.reduce(function (s, x) { return s + (x.p.mb || 0); }, 0);
+      montarEscopos();
+      pintarGC(r.jogos ? 100 * r.guardadas / r.jogos : 0, !r.plano.length
+        ? 'Todas as ' + fmtN.format(r.jogos) + ' capas já estão guardadas neste aparelho.'
+        : fmtN.format(r.guardadas) + ' de ' + fmtN.format(r.jogos) + ' já estão guardadas. Falta baixar ' + r.plano.length + (r.plano.length === 1 ? ' pacote' : ' pacotes') + ' (~' + fmtGB.format(mbs) + ' MB).');
+    }).catch(function () {
+      if (!GC.rodando) pintarGC(0, 'Não deu para buscar a lista de pacotes de capas. Confira a internet e abra de novo.');
+    });
   }
   function atualizarEspaco() {
     var el = $('dc-espaco');
@@ -1039,39 +1082,93 @@
     Promise.all([navigator.storage.estimate(), navigator.storage.persisted ? navigator.storage.persisted() : Promise.resolve(false)]).then(function (r) {
       var e = r[0];
       el.textContent = 'Este site usa ' + mb(e.usage || 0) + ' neste aparelho' + (e.quota ? ' (o navegador deixa usar até ' + mb(e.quota) + ')' : '') + '. ' +
-        (r[1] ? 'Guardado de forma permanente: o navegador não apaga sozinho.' : 'O navegador pode apagar se faltar espaço.');
+        (r[1] ? 'Guardado de forma permanente: o navegador não apaga sozinho.' : 'O navegador pode apagar se faltar espaço' + (instaladoApp() ? '.' : ' (instalar o app ajuda a guardar de vez).'));
     }).catch(function () {});
   }
-  function trabalhador() {
+  // baixa um pacote inteiro com progresso por bytes; devolve um Blob (sem copiar: os pedaços são fatiados depois)
+  function baixarPacote(p, aoProgredir) {
+    GC.ctl = window.AbortController ? new AbortController() : null;
+    return fetch(CAPAS_URL + p.arq + '?h=' + encodeURIComponent(p.h), { cache: 'no-store', signal: GC.ctl ? GC.ctl.signal : undefined }).then(function (r) {
+      if (!r.ok) throw new Error('o servidor das capas respondeu ' + r.status);
+      if (!r.body || !r.body.getReader) return r.blob().then(function (b) { aoProgredir(b.size); return b; });
+      var leitor = r.body.getReader(), pedacos = [], n = 0;
+      return (function ler() {
+        return leitor.read().then(function (x) {
+          if (x.done) return new Blob(pedacos);
+          pedacos.push(x.value); n += x.value.length; aoProgredir(n);
+          return ler();
+        });
+      })();
+    });
+  }
+  // corta o pacote e guarda cada capa no cache, com a URL da Steam como chave
+  function guardarPacote(blob, ids, cache) {
+    return blob.slice(0, 4).arrayBuffer().then(function (b4) {
+      var L = new DataView(b4).getUint32(0, true);
+      return blob.slice(4, 4 + L).text().then(function (t) { return { L: L, cab: JSON.parse(t) }; });
+    }).then(function (x) {
+      var itens = (x.cab.itens || []).filter(function (it) { return !ids || ids.has(it[0]); }), ini = 4 + x.L, k = 0;
+      function proximo() { // 12 de cada vez
+        var lote = itens.slice(k, k + 12); k += 12;
+        if (!lote.length) return Promise.resolve();
+        return Promise.all(lote.map(function (it) {
+          var img = blob.slice(ini + it[2], ini + it[2] + it[3], 'image/webp');
+          return cache.put(BASE + it[1], new Response(img, { headers: { 'Content-Type': 'image/webp', 'Content-Length': String(it[3]) } }))
+            .then(function () { GC.capas++; });
+        })).then(function () { uiGC(); return proximo(); });
+      }
+      return proximo();
+    });
+  }
+  function rodarFila() {
     if (GC.pausado || GC.i >= GC.fila.length) {
-      GC.ativos--;
-      if (GC.ativos <= 0) { GC.rodando = false; GC.pausado = false; uiGC(); atualizarEspaco(); }
+      GC.rodando = false; GC.ctl = null;
+      var terminou = GC.i >= GC.fila.length;
+      GC.msg = terminou ? 'Pronto: ' + fmtN.format(GC.capas) + ' capas guardadas neste aparelho.' : 'Pausado no pacote ' + (GC.i + 1) + ' de ' + GC.fila.length + '. Toque em Continuar.';
+      if (terminou && navigator.storage && navigator.storage.persist) navigator.storage.persist().then(atualizarEspaco).catch(function () {});
+      uiGC(); atualizarEspaco();
       return;
     }
-    var u = GC.fila[GC.i++];
-    var orig = u.orig; u = u.mini;
-    function pega(x) { return fetch(x, { mode: 'cors', credentials: 'omit' }).then(function (resp) { if (!resp.ok) throw new Error('http ' + resp.status); return resp; }); }
-    GC.cache.match(u).then(function (r) {
-      if (r) { GC.ja++; return; }
-      // se o wsrv.nl recusar (limite por IP ou fora do ar), guarda a capa original da Steam no lugar da pequena
-      var p = GC.semWsrv ? pega(orig) : pega(u).catch(function () { GC.semWsrv = true; return pega(orig); });
-      return p.then(function (resp) { return GC.cache.put(u, resp).then(function () { GC.ok++; }); });
-    }).catch(function () { GC.erro++; }).then(function () { uiGC(); trabalhador(); });
+    var x = GC.fila[GC.i], antes = GC.feito;
+    GC.msg = '';
+    baixarPacote(x.p, function (n) { GC.feito = antes + n; uiGC(); }).then(function (blob) {
+      GC.feito = antes + blob.size;
+      GC.msg = 'Guardando as capas do pacote ' + (GC.i + 1) + ' de ' + GC.fila.length + '…'; uiGC();
+      return caches.open(CACHE_IMG).then(function (c) { return guardarPacote(blob, x.ids, c); });
+    }).then(function () {
+      var reg = lerPac();
+      var cheio = !x.ids || (reg[x.p.n] && reg[x.p.n].h === x.p.h && reg[x.p.n].cheio);
+      reg[x.p.n] = { h: x.p.h, cheio: !!cheio };
+      gravarPac(reg);
+      GC.i++;
+      rodarFila();
+    }).catch(function (e) {
+      GC.feito = antes;
+      if (GC.pausado) { rodarFila(); return; } // pausa no meio: o pacote recomeça ao continuar
+      GC.rodando = false; GC.ctl = null;
+      GC.msg = 'Parou no pacote ' + (GC.i + 1) + ' de ' + GC.fila.length + ' (' + (e && e.message ? e.message : 'sem internet?') + '). Toque em Continuar.';
+      uiGC();
+    });
   }
   function baixarCapas() {
     if (!temCache) { atualizarEspaco(); return; }
     if (GC.rodando) return;
     var k = $('dc-escopo').value;
-    if (GC.escopo !== k || GC.i >= GC.fila.length) {
-      GC.fila = escopoLista(k); GC.i = 0; GC.ok = GC.ja = GC.erro = 0; GC.escopo = k; GC.semWsrv = false;
-    }
-    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(atualizarEspaco).catch(function () {});
-    GC.rodando = true; GC.pausado = false;
-    uiGC();
-    caches.open(CACHE_IMG).then(function (c) {
-      GC.cache = c; GC.ativos = 8;
-      for (var j = 0; j < 8; j++) trabalhador();
-    }).catch(function () { GC.rodando = false; $('dc-txt').textContent = 'Este navegador não deixou guardar as capas.'; uiGC(); });
+    GC.rodando = true; GC.pausado = false; GC.msg = 'Conferindo o que falta…'; uiGC();
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
+    var continuar = GC.escopo === k && GC.i > 0 && GC.i < GC.fila.length;
+    (continuar ? Promise.resolve(null) : planejar(k)).then(function (r) {
+      if (r) {
+        GC.fila = r.plano; GC.i = 0; GC.escopo = k; GC.capas = 0; GC.feito = 0;
+        GC.total = r.plano.reduce(function (s, x) { return s + Math.round((x.p.mb || 0) * 1048576); }, 0);
+        if (!r.plano.length) { GC.rodando = false; GC.msg = 'Todas as capas escolhidas já estão guardadas.'; uiGC(); return; }
+      } else {
+        GC.feito = GC.fila.slice(0, GC.i).reduce(function (s, x) { return s + Math.round((x.p.mb || 0) * 1048576); }, 0);
+      }
+      rodarFila();
+    }).catch(function () {
+      GC.rodando = false; GC.msg = 'Não deu para buscar a lista de pacotes de capas. Confira a internet.'; uiGC();
+    });
   }
   function abrirCapas() {
     montarEscopos();
@@ -1081,12 +1178,43 @@
   }
   $('b-capas').addEventListener('click', abrirCapas);
   $('dc-baixar').addEventListener('click', baixarCapas);
-  $('dc-pausar').addEventListener('click', function () { GC.pausado = true; uiGC(); });
-  $('dc-escopo').addEventListener('change', function () { if (!GC.rodando) { GC.fila = []; GC.i = 0; $('dc-baixar').textContent = 'Baixar'; contarGuardadas(); } });
+  $('dc-pausar').addEventListener('click', function () { GC.pausado = true; GC.msg = 'Pausando…'; if (GC.ctl) GC.ctl.abort(); uiGC(); });
+  $('dc-escopo').addEventListener('change', function () { if (!GC.rodando) { GC.fila = []; GC.i = 0; GC.msg = ''; contarGuardadas(); } });
   dlgC.addEventListener('cancel', function (e) { e.preventDefault(); fecharCamada('capas'); });
   dlgC.addEventListener('click', function (e) {
     if (e.target === dlgC || e.target.closest('[data-dc="fechar"]')) fecharCamada('capas');
   });
+
+  // ---------------- 📲 instalar o app (PWA) ----------------
+  var pedidoInstalar = null;
+  var ehIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+  function instaladoApp() {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  }
+  function guardarDeVez() { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(atualizarEspaco).catch(function () {}); }
+  var bInst = $('b-instalar');
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault(); pedidoInstalar = e;
+    if (bInst) bInst.hidden = false;
+  });
+  window.addEventListener('appinstalled', function () {
+    pedidoInstalar = null;
+    if (bInst) bInst.hidden = true;
+    guardarDeVez();
+  });
+  if (bInst) {
+    if (ehIOS && !instaladoApp()) bInst.hidden = false; // no iPhone não há o pedido: o botão mostra a dica
+    bInst.addEventListener('click', function () {
+      if (pedidoInstalar) {
+        pedidoInstalar.prompt();
+        pedidoInstalar.userChoice.then(function (c) { if (c && c.outcome === 'accepted') { bInst.hidden = true; guardarDeVez(); } pedidoInstalar = null; }).catch(function () {});
+        return;
+      }
+      var d = $('dica-instalar');
+      if (d) d.hidden = !d.hidden;
+    });
+  }
+  if (instaladoApp()) guardarDeVez();
 
   // ---------------- cópia das marcações ----------------
   function exportar() {
@@ -1130,7 +1258,6 @@
   document.addEventListener('error', function (e) {
     var t = e.target;
     if (!t || t.tagName !== 'IMG') return;
-    if (t.dataset.orig) { var o = t.dataset.orig; t.removeAttribute('data-orig'); t.src = o; return; }
     if (/(^| )(capa|f-capa|t-img|f-fundo|t-fundo)( |$)/.test(t.className)) t.remove();
   }, true);
 
@@ -1239,6 +1366,24 @@
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
   }
+
+  // ---------------- ganchos para a sincronização (sync.js) ----------------
+  window.ESTANTE_PC = {
+    // a nuvem mudou as marcações: relê do localStorage e redesenha, sem recarregar a página
+    recarregarMarcas: function () {
+      var n = lerJSON(CHAVE, {});
+      M.int = n.int || {}; M.inst = n.inst || {}; M.plano = n.plano || {};
+      if (V.modo === 'catalogo') comAncora(function () { desenhar(true); }); else desenhar(true);
+      atualizarDisco(); atualizarAbas();
+      if (dlg.open && fichaId != null && POR_ID[fichaId]) {
+        var g = POR_ID[fichaId], p = dlg.querySelector('.planos'), s = dlg.querySelector('.f-tit .selos');
+        if (p) p.outerHTML = planosHTML(g);
+        if (s) s.innerHTML = selosTodos(g, true);
+      }
+    },
+    marcar: function (id, k) { marcar(String(id), k); }, // o mesmo caminho dos botões (usado nos testes)
+    marcas: function () { return JSON.parse(JSON.stringify(M)); }
+  };
 })();
 
 /* 1.7.5 (26/11): no celular os chips de gênero ficam em 2 linhas; o botão abre e fecha o resto */
@@ -1296,4 +1441,344 @@
       recarregou = true; location.reload();
     });
   }
+})();
+
+/* 1.8 (26/11): sincroniza as marcações entre o PC e o celular, do mesmo jeito da Estante do Switch (mod_G_sync.js).
+   - a "nuvem" é um gist SECRETO na conta do dono; o arquivo daqui é "estante-pc-sync.json"
+   - usa o MESMO token e o MESMO gist da Estante do Switch (mesma origem, mesmo localStorage): grava só o próprio arquivo
+     (PATCH só de "estante-pc-sync.json"), sem mexer no do Switch
+   - cada marcação (interesse, instalar, plano) guarda a data da última mudança; tirar uma marcação vira "lápide" com data;
+     a junção é item a item e fica a mais nova (no empate, a marcação ganha da lápide)
+   - sincroniza ao abrir, ao voltar para a aba, 4 s depois de cada mudança e quando a internet volta; sem internet, envia depois
+   - o PC escolhido e o tema ficam só neste aparelho
+   - só para teste: a chave "estante-pc-v1-sync-api" troca o api.github.com por um servidor falso (só aceita 127.0.0.1/localhost) */
+(function () {
+  'use strict';
+  var CHAVE = 'estante-pc-v1';
+  var ARQ = 'estante-pc-sync.json', ARQ_SW = 'estante-switch-sync.json';
+  var SW = 'estante-switch-v1';
+  var K_TOK = SW + '-sync-token', K_GIST = SW + '-sync-gist', K_LOGIN = SW + '-sync-login'; // compartilhados com a Estante do Switch
+  var K_META = CHAVE + '-sync-meta', K_OFF = CHAVE + '-sync-off', K_API = CHAVE + '-sync-api';  // só desta estante
+  var LINK_TOKEN = 'https://github.com/settings/tokens/new?scopes=gist&description=Estante%20do%20Switch%20e%20do%20PC';
+  var API = 'https://api.github.com';
+  try { var apiT = localStorage.getItem(K_API); if (apiT && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(apiT)) API = apiT; } catch (e) {}
+  var PLANOS = { quero: 1, joguei: 1, nao: 1 };
+
+  function $(id) { return document.getElementById(id); }
+  function ler(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function gravar(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  function parse(t) { try { return JSON.parse(t); } catch (e) { return undefined; } }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function lerMeta() {
+    var m = parse(ler(K_META) || 'null');
+    if (!m || typeof m !== 'object' || !m.itens || typeof m.itens !== 'object') m = { itens: {}, ini: false, seq: 0, pend: false, ult: 0 };
+    return m;
+  }
+  function gravarMeta(m) { gravar(K_META, JSON.stringify(m)); }
+
+  // ---------- as marcações viram itens: "int|570", "inst|570", "pl|570" (valor: quero/joguei/nao) ----------
+  function achatar(txt) {
+    var o = parse(txt || 'null'), r = {};
+    if (!o || typeof o !== 'object') return r;
+    Object.keys(o.int || {}).forEach(function (id) { if (o.int[id]) r['int|' + id] = 1; });
+    Object.keys(o.inst || {}).forEach(function (id) { if (o.inst[id]) r['inst|' + id] = 1; });
+    Object.keys(o.plano || {}).forEach(function (id) { if (PLANOS[o.plano[id]]) r['pl|' + id] = o.plano[id]; });
+    return r;
+  }
+  function montar(vivos) {
+    var o = { int: {}, inst: {}, plano: {} };
+    Object.keys(vivos).forEach(function (s) {
+      var i = s.indexOf('|'), tipo = s.slice(0, i), id = s.slice(i + 1);
+      if (tipo === 'int') o.int[id] = 1;
+      else if (tipo === 'inst') o.inst[id] = 1;
+      else if (tipo === 'pl' && PLANOS[vivos[s]]) o.plano[id] = vivos[s];
+    });
+    return JSON.stringify(o);
+  }
+  // compara o que está salvo com o que estava anotado e data o que mudou
+  // (na primeira vez neste aparelho, o que já existia entra com data 0: não apaga nada que esteja na nuvem)
+  function registrar(m, txt) {
+    var F = achatar(txt), agora = Date.now(), base = m.ini ? agora : 0, mudou = false;
+    Object.keys(F).forEach(function (s) {
+      var cur = m.itens[s];
+      if (!cur || cur.d || String(cur.v) !== String(F[s])) { m.itens[s] = { t: base, v: F[s] }; mudou = true; }
+    });
+    Object.keys(m.itens).forEach(function (s) {
+      if (!m.itens[s].d && !(s in F)) { m.itens[s] = { t: base, d: 1 }; mudou = true; }
+    });
+    if (mudou && m.ini) { m.seq = (m.seq || 0) + 1; m.pend = true; }
+    return mudou;
+  }
+  function conferirTudo() {
+    var m = lerMeta(), mudou = registrar(m, ler(CHAVE));
+    if (!m.ini) { m.ini = true; mudou = true; }
+    if (mudou) gravarMeta(m);
+    return m;
+  }
+
+  // ---------- junção item a item ----------
+  function vence(a, b) { // a = deste aparelho, b = da nuvem
+    if (!a) return b;
+    if (!b) return a;
+    if (a.t !== b.t) return a.t > b.t ? a : b;
+    if (!!a.d !== !!b.d) return a.d ? b : a; // empate: a marcação ganha da lápide
+    return b;
+  }
+  function igual(a, b) { return !!a && !!b && a.t === b.t && !!a.d === !!b.d && String(a.v) === String(b.v); }
+  function juntar(L, R) {
+    var out = {}, mudLocal = false, difRemoto = false;
+    Object.keys(L).concat(Object.keys(R)).forEach(function (id) {
+      if (id in out) return;
+      var w = vence(L[id], R[id]);
+      if (!w || typeof w !== 'object' || typeof w.t !== 'number') return;
+      out[id] = w;
+      if (!igual(w, L[id])) mudLocal = true;
+      if (!igual(w, R[id])) difRemoto = true;
+    });
+    return { itens: out, mudLocal: mudLocal, difRemoto: difRemoto };
+  }
+  function aplicarLocal(res) {
+    var m = lerMeta();
+    m.itens = res.itens;
+    gravarMeta(m);
+    if (!res.mudLocal) return;
+    var vivos = {};
+    Object.keys(res.itens).forEach(function (s) { if (!res.itens[s].d) vivos[s] = res.itens[s].v; });
+    var novo = montar(vivos);
+    if (JSON.stringify(achatar(novo)) === JSON.stringify(achatar(ler(CHAVE)))) return;
+    gravar(CHAVE, novo); // direto no localStorage: não passa pelo salvar() do app (não vira "mudança" deste aparelho)
+    try { if (window.ESTANTE_PC) window.ESTANTE_PC.recarregarMarcas(); } catch (e) { console.warn('sync:', e); }
+  }
+
+  // ---------- conversa com o GitHub ----------
+  function Erro(tipo, msg) { var e = new Error(msg); e.tipo = tipo; return e; }
+  function token() { var t = ler(K_TOK); return t && t.length > 10 ? t : null; }
+  function desligado() { return ler(K_OFF) === '1'; }
+  function conectado() { return !!token() && !desligado(); }
+  function pedir(metodo, caminho, corpo, leve) {
+    var op = { method: metodo, cache: 'no-store', headers: { 'Authorization': 'token ' + token(), 'Accept': 'application/vnd.github+json' } };
+    if (corpo !== undefined) { op.body = JSON.stringify(corpo); op.headers['Content-Type'] = 'application/json'; if (leve && op.body.length < 60000) op.keepalive = true; }
+    return fetch(API + caminho, op).catch(function () { throw Erro('rede', 'sem internet'); }).then(function (r) {
+      if (r.ok) return r.status === 204 ? null : r.json();
+      if (r.status === 401) throw Erro('token', 'o GitHub recusou o código (errado, apagado ou vencido)');
+      if (r.status === 403 && r.headers.get('x-ratelimit-remaining') === '0') throw Erro('limite', 'o GitHub pediu uma pausa; tento de novo em uma hora');
+      if (r.status === 403 || (r.status === 404 && (metodo === 'POST' || caminho.indexOf('/gists?') === 0))) throw Erro('permissao', 'o código não tem a permissão "gist"');
+      if (r.status === 404) throw Erro('sumiu', 'gist não encontrado');
+      throw Erro('erro', 'o GitHub respondeu com erro ' + r.status);
+    });
+  }
+  // o gist: o mesmo da Estante do Switch (se já houver); senão procura um com o arquivo de uma das duas estantes
+  function acharGist() {
+    var id = ler(K_GIST);
+    if (id) return Promise.resolve(id);
+    var achado = null, nota = -1;
+    function pagina(n) {
+      return pedir('GET', '/gists?per_page=100&page=' + n).then(function (lista) {
+        (lista || []).forEach(function (g) {
+          if (!g || !g.files) return;
+          var p = (g.files[ARQ_SW] ? 2 : 0) + (g.files[ARQ] ? 1 : 0); // o que tem os dois arquivos, depois o do Switch
+          if (p > 0 && (p > nota || (p === nota && String(g.updated_at) > String(achado.updated_at)))) { achado = g; nota = p; }
+        });
+        if (lista && lista.length === 100 && n < 30) return pagina(n + 1);
+      });
+    }
+    return pagina(1).then(function () {
+      if (achado) { gravar(K_GIST, achado.id); return achado.id; }
+      return null;
+    });
+  }
+  function baixar(id) {
+    return pedir('GET', '/gists/' + encodeURIComponent(id)).then(function (g) {
+      var f = g && g.files && g.files[ARQ];
+      if (!f) return { itens: {} }; // o gist existe (do Switch) mas ainda não tem o arquivo do PC
+      var conteudo = f.truncated && f.raw_url
+        ? fetch(f.raw_url, { cache: 'no-store' }).catch(function () { throw Erro('rede', 'sem internet'); }).then(function (r) { if (!r.ok) throw Erro('erro', 'não deu para ler o arquivo da nuvem'); return r.text(); })
+        : Promise.resolve(f.content || '');
+      return conteudo.then(function (txt) {
+        if (!txt.trim()) return { itens: {} };
+        var o = parse(txt);
+        if (!o || typeof o !== 'object' || !o.itens || typeof o.itens !== 'object') throw Erro('estragado', 'o arquivo da nuvem não está no formato da Estante; nada foi mudado');
+        return o;
+      });
+    });
+  }
+  function docDe(itens) {
+    var limite = Date.now() - 400 * 864e5, it = {};
+    Object.keys(itens).forEach(function (id) { var x = itens[id]; if (!(x.d && x.t && x.t < limite)) it[id] = x; }); // lápides com mais de 400 dias saem
+    return JSON.stringify({ app: 'Estante do PC', v: 1, upd: Date.now(), itens: it });
+  }
+  function arquivo(conteudo) { var f = {}; f[ARQ] = { content: conteudo }; return f; }
+  function criar(conteudo) {
+    return pedir('POST', '/gists', { description: 'Estante do Switch e do PC: marcações (sincronização entre aparelhos; não apague)', public: false, files: arquivo(conteudo) })
+      .then(function (g) { gravar(K_GIST, g.id); return g.id; });
+  }
+  function enviar(id, conteudo, leve) { return pedir('PATCH', '/gists/' + encodeURIComponent(id), { files: arquivo(conteudo) }, leve); } // só o arquivo do PC
+
+  // ---------- o ciclo: confere, baixa, junta, aplica, envia ----------
+  var estado = { fase: 'off', msg: '' }, andando = false, deNovo = false, timer = 0, ultTent = 0;
+  function agendar(ms) { clearTimeout(timer); timer = setTimeout(function () { sincronizar('mudança'); }, ms); }
+  function sincronizar(motivo, leve) {
+    if (!conectado()) { estado.fase = 'off'; mostrar(); return Promise.resolve(); }
+    if (andando) { deNovo = true; return Promise.resolve(); }
+    andando = true; ultTent = Date.now(); clearTimeout(timer);
+    var m0 = conferirTudo(), seq = m0.seq || 0, id = null;
+    estado.fase = m0.pend ? 'enviando' : 'conferindo'; mostrar();
+    return acharGist().then(function (gid) {
+      if (!gid) { estado.fase = 'enviando'; mostrar(); return criar(docDe(lerMeta().itens)).then(function (nid) { id = nid; return { criou: true }; }); }
+      id = gid;
+      return baixar(gid).catch(function (e) {
+        if (e.tipo !== 'sumiu') throw e;
+        gravar(K_GIST, null); // o gist foi apagado: procura outro ou cria de novo
+        return acharGist().then(function (g2) {
+          if (g2) { id = g2; return baixar(g2); }
+          return criar(docDe(lerMeta().itens)).then(function (nid) { id = nid; return { criou: true }; });
+        });
+      });
+    }).then(function (remoto) {
+      if (remoto.criou) return;
+      var m = lerMeta(), res = juntar(m.itens, remoto.itens || {});
+      aplicarLocal(res);
+      seq = lerMeta().seq || 0;
+      if (!res.difRemoto && !lerMeta().pend) return;
+      estado.fase = 'enviando'; mostrar();
+      return enviar(id, docDe(res.itens), leve);
+    }).then(function () {
+      var m = lerMeta();
+      if ((m.seq || 0) === seq) m.pend = false;
+      m.ult = Date.now();
+      gravarMeta(m);
+      estado.fase = 'ok'; estado.msg = '';
+      andando = false;
+      if (m.pend || deNovo) { deNovo = false; agendar(800); }
+      mostrar();
+    }).catch(function (e) {
+      andando = false;
+      estado.fase = e.tipo === 'rede' ? 'offline' : (e.tipo === 'token' || e.tipo === 'permissao') ? 'token' : 'erro';
+      estado.msg = e.tipo === 'rede' ? '' : e.message;
+      if (!e.tipo) console.warn('sync:', e);
+      mostrar();
+      if (e.tipo === 'rede' || e.tipo === 'erro' || e.tipo === 'limite') agendar(e.tipo === 'limite' ? 3600e3 : 60000);
+    });
+  }
+
+  // ---------- interface: bloco em "Minhas marcações" + selinho no topo quando der erro ----------
+  function hora(t) { return new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
+  function textoEstado() {
+    var m = lerMeta();
+    if (!token()) return 'Desligado: ainda não está ligado em nenhum aparelho deste navegador.';
+    if (desligado()) return 'Desligado neste aparelho.';
+    switch (estado.fase) {
+      case 'conferindo': return 'Conferindo…';
+      case 'enviando': return 'Enviando…';
+      case 'offline': return m.pend ? 'Sem internet: envia depois.' : 'Sem internet agora.';
+      case 'token': return 'Erro: ' + (estado.msg || 'o GitHub recusou o código') + '.';
+      case 'erro': return 'Erro: ' + (estado.msg || 'não deu para sincronizar') + '.';
+      case 'ok': return m.pend ? 'Falta enviar…' : (m.ult ? 'Sincronizado às ' + hora(m.ult) + '.' : 'Ligado.');
+      default: return 'Ligado.';
+    }
+  }
+  function mascarar(t) { return t.length > 12 ? t.slice(0, 4) + '••••••••' + t.slice(-4) : '••••••••'; }
+  var desenhado = '';
+  function mostrar() {
+    var st = $('sync-st'), corpo = $('sync-corpo'), selo = $('sync-selo');
+    if (!st || !corpo) return;
+    var fase = !token() ? 'off' : desligado() ? 'desligado' : estado.fase;
+    st.textContent = textoEstado();
+    st.dataset.fase = fase;
+    if (selo) {
+      var ruim = fase === 'token' || fase === 'erro';
+      selo.hidden = !ruim;
+      selo.title = ruim ? textoEstado() : '';
+    }
+    // o corpo só é refeito quando muda de "tipo" (para não apagar o que a pessoa está digitando)
+    var tipo = !token() || fase === 'token' ? 'form' : desligado() ? 'ligar' : 'ligado';
+    if (tipo === desenhado && tipo !== 'ligado') return;
+    desenhado = tipo;
+    var t = token(), login = ler(K_LOGIN), h = '';
+    if (tipo === 'form') {
+      h = (fase === 'token' ? '<p>O código guardado não vale mais. Crie outro e cole aqui (a Estante do Switch passa a usar o novo também).</p>'
+        : '<p>As suas marcações (interesse, instalar, quero jogar, já joguei, não quero) ficam iguais no PC e no celular. Elas ficam num arquivo secreto na sua conta do GitHub, o mesmo da Estante do Switch. Se você já ligou a sincronização na Estante do Switch neste navegador, ela liga aqui sozinha.</p>') +
+        '<ol class="sync-passos">' +
+        '<li>Abra o link e entre na sua conta do GitHub: <a href="' + LINK_TOKEN + '" target="_blank" rel="noopener">criar o código de acesso</a>.</li>' +
+        '<li>Em <b>Expiration</b>, escolha <b>No expiration</b>. A caixinha <b>gist</b> já vem marcada: não marque mais nada.</li>' +
+        '<li>Toque no botão verde <b>Generate token</b> e copie o código (começa com <b>ghp_</b>).</li>' +
+        '<li>Cole aqui embaixo e toque em <b>Ligar</b>. No outro aparelho, faça o mesmo com o mesmo código.</li></ol>' +
+        '<form class="sync-form" id="sync-form"><label for="sync-tok">Código de acesso</label>' +
+        '<input id="sync-tok" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ghp_..." required>' +
+        '<button type="submit" class="btn btn-forte">Ligar</button></form>' +
+        '<p class="fine">O código fica só neste aparelho (nunca vai para o site) e só serve para esse arquivo secreto.</p>';
+    } else if (tipo === 'ligar') {
+      h = '<p>A sincronização está desligada neste aparelho. O código continua guardado (a Estante do Switch usa o mesmo).</p>' +
+        '<div class="actions"><button type="button" class="btn btn-forte" data-sync="ligar">Ligar neste aparelho</button></div>';
+    } else {
+      h = '<p class="fine">' + (login ? 'Conta <b>' + esc(login) + '</b>, ' : '') + 'código <code class="sync-mask">' + esc(mascarar(t)) + '</code>. ' +
+        'O que você marca aqui vai sozinho para a nuvem em poucos segundos; ao abrir, a Estante pega o que mudou no outro aparelho. Se os dois mudaram o mesmo jogo, fica a mudança mais nova.</p>' +
+        '<div class="actions"><button type="button" class="btn btn-forte" data-sync="agora">Sincronizar agora</button>' +
+        '<button type="button" class="btn sync-sair" data-sync="desligar">Desligar neste aparelho</button></div>';
+    }
+    corpo.innerHTML = h;
+  }
+  function ligarComCodigo(t) {
+    t = String(t || '').replace(/\s+/g, '');
+    if (t.length < 20) { estado.fase = 'off'; $('sync-st').textContent = 'Esse código está curto demais: copie ele inteiro (começa com ghp_ ou github_pat_).'; return; }
+    var antigo = ler(K_TOK);
+    gravar(K_TOK, t); gravar(K_OFF, null);
+    if (antigo !== t) { gravar(K_GIST, null); gravar(K_LOGIN, null); }
+    estado.fase = 'conferindo'; estado.msg = ''; desenhado = ''; mostrar();
+    pedir('GET', '/user').then(function (u) { if (u && u.login) gravar(K_LOGIN, String(u.login)); }).then(function () {
+      desenhado = ''; return sincronizar('ligar');
+    }).catch(function (e) {
+      if (e.tipo === 'token') { gravar(K_TOK, antigo); estado.fase = antigo ? 'token' : 'off'; desenhado = ''; mostrar(); $('sync-st').textContent = 'O GitHub não aceitou esse código. Confira se copiou ele inteiro, ou crie outro pelo link.'; return; }
+      if (e.tipo === 'rede') { estado.fase = 'offline'; agendar(30000); } else { estado.fase = 'erro'; estado.msg = e.message; }
+      desenhado = ''; mostrar();
+    });
+  }
+  document.addEventListener('submit', function (e) {
+    if (!e.target || e.target.id !== 'sync-form') return;
+    e.preventDefault();
+    ligarComCodigo($('sync-tok').value);
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-sync]');
+    if (b) {
+      var k = b.dataset.sync;
+      if (k === 'agora') { estado.msg = ''; sincronizar('botão'); }
+      else if (k === 'desligar') { gravar(K_OFF, '1'); clearTimeout(timer); estado.fase = 'off'; desenhado = ''; mostrar(); }
+      else if (k === 'ligar') { gravar(K_OFF, null); desenhado = ''; estado.fase = 'conferindo'; mostrar(); sincronizar('ligar'); }
+      return;
+    }
+    if (e.target.closest && e.target.closest('#sync-selo')) { var s = $('sync'); if (s) s.scrollIntoView({ block: 'center' }); }
+  });
+
+  // ---------- quando sincronizar ----------
+  window.SYNC_PC = {
+    // o app gravou as marcações (salvar()): anota o que mudou e envia daqui a 4 s
+    mudou: function () {
+      var m = lerMeta();
+      if (!m.ini) { conferirTudo(); return conectado() && agendar(4000); }
+      if (registrar(m, ler(CHAVE))) { gravarMeta(m); if (conectado()) { mostrar(); agendar(4000); } }
+    },
+    sincronizar: sincronizar,
+    estado: function () { return { fase: estado.fase, msg: estado.msg, texto: textoEstado(), meta: lerMeta() }; }
+  };
+  document.addEventListener('visibilitychange', function () {
+    if (!conectado()) return;
+    if (document.visibilityState === 'visible') { if (Date.now() - ultTent > 5000) sincronizar('voltou'); }
+    else if (lerMeta().pend) sincronizar('saiu', true);
+  });
+  window.addEventListener('pagehide', function () { if (conectado() && lerMeta().pend && !andando) sincronizar('saiu', true); });
+  window.addEventListener('focus', function () { if (conectado() && Date.now() - ultTent > 20000) sincronizar('foco'); });
+  window.addEventListener('online', function () { if (conectado()) sincronizar('voltou a internet'); });
+  setInterval(function () {
+    if (!conectado() || document.visibilityState !== 'visible') return;
+    if (Date.now() - ultTent > 180000) sincronizar('de tempos em tempos'); else mostrar();
+  }, 30000);
+  // a Estante do Switch (outra aba) ligou ou trocou o código
+  window.addEventListener('storage', function (e) { if (e.key === K_TOK || e.key === K_OFF) { desenhado = ''; estado.fase = conectado() ? 'ok' : 'off'; mostrar(); if (conectado()) sincronizar('outra aba'); } });
+
+  // ---------- começa ----------
+  conferirTudo();
+  estado.fase = conectado() ? 'ok' : 'off';
+  mostrar();
+  if (conectado()) sincronizar('abriu');
 })();

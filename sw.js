@@ -1,7 +1,7 @@
 /* sw.js — Estante do PC (service worker).
-   - Imagens (capas pequenas do wsrv.nl, capas e capturas da Steam): cache primeiro. Abriu uma vez, nunca mais baixa.
-     Busca em modo CORS (os dois servidores mandam Access-Control-Allow-Origin: *), para o navegador contar o
-     tamanho real e não uns 7 MB por imagem.
+   - Imagens (capas e capturas da Steam): cache primeiro. Abriu uma vez, nunca mais baixa. Busca em modo CORS
+     (a Steam manda Access-Control-Allow-Origin: *), para o navegador contar o tamanho real e não uns 7 MB por imagem.
+     Os pacotes de capas (estante-pc-capas, fora do escopo deste site) não passam por aqui: o app guarda cada capa.
    - Dados (dados/lista_NN.js e ficha_NN.js) e arquivos do app (app.js, estilo.css...): mostra o guardado na hora
      e atualiza por trás (stale-while-revalidate). Guarda só a versão mais nova de cada arquivo.
    - A página (index.html): rede primeiro, com 3 s de espera; sem internet, abre a última guardada.
@@ -22,12 +22,16 @@ self.addEventListener('activate', function (e) {
   e.waitUntil(caches.keys().then(function (ks) {
     return Promise.all(ks.filter(function (k) { return k.indexOf('epc-') === 0 && TODOS.indexOf(k) < 0; })
       .map(function (k) { return caches.delete(k); }));
+  }).then(function () {
+    // as capas pequenas do wsrv.nl (versão antiga) não servem mais: sai do cache
+    return caches.open(IMG).then(function (c) {
+      return c.keys().then(function (ks) { return Promise.all(ks.filter(function (k) { return k.url.indexOf('https://wsrv.nl/') === 0; }).map(function (k) { return c.delete(k); })); });
+    }).catch(function () {});
   }).then(function () { return self.clients.claim(); }));
 });
 
 function ehImagem(req, url) {
   if (req.destination === 'image') return true;
-  if (url.hostname === 'wsrv.nl') return true;
   return /steamstatic\.com$/.test(url.hostname) && /\.(jpg|jpeg|png|webp|gif)$/i.test(url.pathname);
 }
 
@@ -38,6 +42,7 @@ self.addEventListener('fetch', function (e) {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
   if (ehImagem(req, url) && url.origin !== self.location.origin) { e.respondWith(imagem(req)); return; }
   if (url.origin === self.location.origin) {
+    if (url.href.indexOf(self.registration.scope) !== 0) return; // fora do site (ex.: /estante-pc-capas/): direto na rede
     if (req.mode === 'navigate') { e.respondWith(paginaRede(e)); return; }
     e.respondWith(swr(e, /\/dados\//.test(url.pathname) ? DADOS : CASCA));
     return;
@@ -45,34 +50,16 @@ self.addEventListener('fetch', function (e) {
   if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') e.respondWith(swr(e, CASCA));
 });
 
-// capa pequena do wsrv.nl -> endereço da original na Steam (o parâmetro url)
-function origDeMini(u) {
-  try { var x = new URL(u); if (x.hostname !== 'wsrv.nl') return ''; var o = x.searchParams.get('url'); return o ? 'https://' + o.replace(/^https?:\/\//, '') : ''; }
-  catch (e) { return ''; }
-}
-// se o wsrv.nl recusar (fora do ar ou limite por IP, erro 403/1106), usa a original da Steam por 10 minutos
-var wsrvForaAte = 0;
-function buscar(u) { return fetch(u, { mode: 'cors', credentials: 'omit' }); }
+// capas e capturas da Steam: cache primeiro. As capas dos pacotes (WebP) já entram no cache com a URL da Steam
+// como chave (o app.js faz isso no "Guardar capas"), então o card recebe a WebP guardada sem ir à internet.
 function imagem(req) {
   return caches.open(IMG).then(function (c) {
     return c.match(req.url).then(function (r) {
       if (r) return r;
-      var orig = origDeMini(req.url);
-      var pegaOrig = function () {
-        return buscar(orig).then(function (r2) {
-          if (r2.ok) c.put(req.url, r2.clone()).catch(function () {}); // guarda a original no lugar da pequena
-          return r2;
-        });
-      };
-      if (orig && Date.now() < wsrvForaAte) return pegaOrig();
-      return buscar(req.url).then(function (resp) {
-        if (resp.ok) { c.put(req.url, resp.clone()).catch(function () {}); return resp; }
-        if (orig) { wsrvForaAte = Date.now() + 600000; return pegaOrig(); }
+      return fetch(req.url, { mode: 'cors', credentials: 'omit' }).then(function (resp) {
+        if (resp.ok) c.put(req.url, resp.clone()).catch(function () {});
         return resp;
-      }).catch(function () {
-        if (orig) { wsrvForaAte = Date.now() + 600000; return pegaOrig(); }
-        return fetch(req); // sem CORS: entrega sem guardar
-      });
+      }).catch(function () { return fetch(req); }); // sem CORS: entrega sem guardar
     });
   });
 }

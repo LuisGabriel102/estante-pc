@@ -3,6 +3,7 @@
   "short_name": "Estante PC",
   "description": "Jogos da Steam que rodam em dois PCs fracos.",
   "lang": "pt-BR",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
