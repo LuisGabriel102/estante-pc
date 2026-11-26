@@ -66,7 +66,8 @@
   function salvarAj() { try { localStorage.setItem(CHAVE_AJ, JSON.stringify({ pc: AJ.pc, tema: AJ.tema })); } catch (e) {} }
 
   // ---------------- filtros (não ficam guardados entre visitas) ----------------
-  function filtrosPadrao() { return { q: [], qTxt: '', idioma: '', ordem: 'pop', rom: false, esc18: true, escVet: true, naoRoda: false, ctrl: false }; }
+  var ORDEM_PADRAO = 'pop'; // vira "pv" (Mais a sua cara) quando a lista traz o pv
+  function filtrosPadrao() { return { q: [], qTxt: '', idioma: '', ordem: ORDEM_PADRAO, rom: false, esc18: true, escVet: true, naoRoda: false, ctrl: false }; }
   var F = filtrosPadrao();
   F.pc = AJ.pc === 'pai' || AJ.pc === 'meu' ? AJ.pc : 'dois';
   // V: o que está na tela. modo "catalogo" ou "grade"; fonte da grade: {t:'sec'|'gen'|'nivel'|'aba'|'busca', k}
@@ -112,8 +113,16 @@
     (lista || []).forEach(function (g) {
       if (POR_ID[g.i]) return;
       if (!g.f) g.f = n;
+      if (g.jo != null) TEM_JO = true;
+      if (g.pv != null) TEM_PV = true;
       prep(g); JOGOS.push(g); POR_ID[g.i] = g;
     });
+    // com o perfil de gostos na lista, a ordem padrão passa a ser "Mais a sua cara" (se ninguém mudou a ordem)
+    if (TEM_PV && ORDEM_PADRAO !== 'pv') {
+      if (F.ordem === ORDEM_PADRAO) F.ordem = 'pv';
+      ORDEM_PADRAO = 'pv';
+      sincronizarCampos();
+    }
     fila = fila.filter(function (x) { return x !== n; });
     falhou = falhou.filter(function (x) { return x !== n; });
     avisoDados(); agendar();
@@ -174,7 +183,7 @@
   function notaP(g) { if (g.r == null) return -1; var rv = g.rv || 0; return (g.r * rv + 70 * 200) / (rv + 200); }
   // "Para você": quando o jogo traz pv (0 a 100, o quanto combina com o usuário), vale o pv;
   // sem pv, cai no critério antigo (romance e RPG primeiro, depois a nota)
-  var PV_MIN = 50;
+  var PV_MIN = 74; // faixa verde (🟢) da Estante do Switch: 74 a 100
   function ordPara(a, b) {
     var va = a.pv != null ? a.pv : -1, vb = b.pv != null ? b.pv : -1;
     if (va !== vb) return vb - va;
@@ -183,24 +192,33 @@
   }
   function paraVoce(g) {
     if (M.plano[g.i] || g._vet || nv(g) < 3) return false;
+    if (g.nv) return g.nv === 'sim';            // 🟢 do perfil de gostos
     if (g.pv != null) return g.pv >= PV_MIN;
-    return g.pt >= 1 && (g.r || 0) >= 85;
+    return g.pt >= 1 && (g.r || 0) >= 85;       // sem perfil: critério antigo
+  }
+  // joia: usa o campo jo quando a lista traz esse campo; se não, a regra da nota e das poucas avaliações
+  var TEM_JO = false, TEM_PV = false;
+  function ehJoia(g) {
+    if (nv(g) < 3) return false;
+    if (TEM_JO) return g.jo === 1;
+    return (g.r || 0) >= 90 && ((g.rv >= 500 && g.rv <= 20000) || (g['do'] || 0) <= 500000);
   }
   function ordNota(a, b) { return notaP(b) - notaP(a) || a.o - b.o; }
   var ORDENS = {
+    pv: function (a, b) { return (b.pv != null ? b.pv : -1) - (a.pv != null ? a.pv : -1) || a.o - b.o; },
     pop: function (a, b) { return a.o - b.o; },
     nota: ordNota,
     novos: function (a, b) { return (b.a || 0) - (a.a || 0) || a.o - b.o; },
     nome: function (a, b) { return colar.compare(a.n, b.n); },
     disco: function (a, b) { return (a.s == null ? 1e9 : a.s) - (b.s == null ? 1e9 : b.s) || a.o - b.o; }
   };
-  var NOMES_ORDEM = { pop: 'Mais jogados', nota: 'Melhor avaliados', novos: 'Mais novos', nome: 'Nome (A a Z)', disco: 'Menor no disco' };
+  var NOMES_ORDEM = { pv: 'Mais a sua cara', pop: 'Mais jogados', nota: 'Melhor avaliados', novos: 'Mais novos', nome: 'Nome (A a Z)', disco: 'Menor no disco' };
 
   var SECOES = [
     { k: 'para', tit: '✨ Para você', dsc: 'Rodam no PC escolhido e combinam com você. Some quando você decide.',
       f: paraVoce, ord: ordPara, pq: true },
-    { k: 'joias', tit: '💎 Joias escondidas', dsc: 'Nota 90% ou mais, pouca gente conhece, e roda no PC escolhido.',
-      f: function (g) { return (g.r || 0) >= 90 && ((g.rv >= 500 && g.rv <= 20000) || (g['do'] || 0) <= 500000) && nv(g) >= 3; }, ord: ordNota },
+    { k: 'joias', tit: '💎 Joias escondidas', dsc: 'Nota altíssima, pouca gente conhece, e roda no PC escolhido.',
+      f: ehJoia, ord: ordNota },
     { k: 'liso', tit: 'Roda liso nos seus PCs', dsc: 'Passam dos requisitos recomendados.', f: function (g) { return nv(g) === 4; } },
     { k: 'dub', tit: 'Dublados em PT-BR', dsc: 'Com vozes em português do Brasil.', f: function (g) { return g.pt === 2; } },
     { k: 'rom', tit: '💗 Romance', dsc: '', f: function (g) { return !!g.rom; } },
@@ -258,7 +276,7 @@
   }
   function ordenar(lista, fo) {
     var cmp = ORDENS[F.ordem] || ORDENS.pop;
-    if (F.ordem === 'pop' && fo && fo.t === 'sec' && SEC_K[fo.k].ord) cmp = SEC_K[fo.k].ord;
+    if (F.ordem === ORDEM_PADRAO && fo && fo.t === 'sec' && SEC_K[fo.k].ord) cmp = SEC_K[fo.k].ord;
     return lista.sort(cmp);
   }
 
@@ -297,9 +315,31 @@
     if (pl === 'nao') return '<span class="selo veto">Dispensado</span>';
     return '';
   }
-  function selosTodos(g) {
-    return selosNivel(g) + seloPT(g) + seloNota(g) + seloDeck(g) +
-      (g.rom ? '<span class="selo rom">Romance</span>' : '') +
+  // romance em níveis (rk), como na Estante do Switch; sem rk, vale o rom antigo
+  var ROM_NIVEL = {
+    sim: ['rom', '♥ Romance central'], opc: ['rom', '♥ Dá pra namorar'],
+    leve: ['rom leve', '♡ Romance de fundo'], nc: ['rom-nc', '? romance']
+  };
+  function seloRom(g) {
+    var r = ROM_NIVEL[g.rk];
+    if (r) return '<span class="selo ' + r[0] + '"' + (g.rk === 'nc' ? ' title="Romance não conferido"' : '') + '>' + r[1] + '</span>';
+    return g.rom ? '<span class="selo rom">♥ Romance</span>' : '';
+  }
+  function textoRom(g) {
+    var r = ROM_NIVEL[g.rk];
+    if (g.rk === 'nc') return 'Não conferido';
+    return r ? r[1].slice(2) : g.rom ? 'Tem romance' : '';
+  }
+  // 🟢🟡🔴 do perfil de gostos (nv) com a nota pv
+  var GOSTO = { sim: ['🟢', 'Acho que você vai gostar'], talvez: ['🟡', 'Talvez'], nao: ['🔴', 'Acho que não'] };
+  function seloGosto(g) {
+    var x = GOSTO[g.nv];
+    if (!x && g.pv == null) return '';
+    return '<span class="selo gosto" title="' + esc(x ? x[1] : 'Combina com você') + '">' + (x ? x[0] + ' ' : '🎯 ') + (g.pv != null ? g.pv : '') + '</span>';
+  }
+  function selosTodos(g, comGosto) {
+    return (comGosto ? seloGosto(g) : '') + selosNivel(g) + seloPT(g) + seloNota(g) + seloDeck(g) + seloRom(g) +
+      (g.sw === 'fav' ? '<span class="selo plano" title="Você deu estrela a este jogo na Estante do Switch">★ no Switch</span>' : '') +
       (g._vet ? '<span class="selo veto" title="' + (g.x === 'ot' ? 'Otome' : 'Romance só do mesmo sexo') + '">Vetado</span>' : '') +
       (g.ad ? '<span class="selo ad">+18</span>' : '') +
       (g.on ? '<span class="selo">Só on-line</span>' : '') +
@@ -317,6 +357,8 @@
     return '<img class="' + classe + '" loading="lazy" decoding="async" width="460" height="215" alt="Capa de ' + esc(g.n) + '" src="' +
       (pequena ? esc(urlMini(g.c)) + '" data-orig="' + o : o) + '">';
   }
+  // a frase "por que é a sua cara" vem na ficha (pq); aceita também no jogo, se um dia vier
+  function pqDe(g) { return g.pq || (FICHAS[g.i] && FICHAS[g.i].pq) || ''; }
   function cardHTML(g, comPq) {
     var id = g.i, nome = esc(g.n);
     return '<article class="card' + (M.inst[id] ? ' sel' : '') + (M.plano[id] === 'nao' ? ' dispensado' : '') + '" data-id="' + id + '">' +
@@ -330,8 +372,8 @@
       '</div>' +
       '<div class="card-corpo">' +
         '<h3 class="nome">' + nome + '</h3>' +
-        '<div class="selos">' + selosTodos(g) + '</div>' +
-        (comPq && g.pq ? '<p class="pq">' + esc(g.pq) + '</p>' : '') +
+        '<div class="selos">' + selosTodos(g, comPq) + '</div>' +
+        (comPq && pqDe(g) ? '<p class="pq">' + esc(pqDe(g)) + '</p>' : '') +
         '<div class="meta">' + metaTxt(g) + '</div>' +
         '<button type="button" class="ver" data-acao="ver">Ver o jogo</button>' +
       '</div></article>';
@@ -372,7 +414,7 @@
     if (!JOGOS.length) { $('catalogo').innerHTML = '<p class="empty">Abrindo o catálogo…</p>'; return; }
     SECOES.forEach(function (s) {
       var l = base.filter(s.f);
-      if (F.ordem === 'pop' && s.ord) l.sort(s.ord);
+      if (F.ordem === ORDEM_PADRAO && s.ord) l.sort(s.ord);
       if (l.length) h.push(secaoHTML('sec-' + s.k, titSecao(s), s.dsc, l, 'sec:' + s.k, !!s.pq));
     });
     porGenero(base).forEach(function (x) {
@@ -478,7 +520,7 @@
     var a = [];
     if (F.q.length) a.push(['q', 'Busca: “' + F.qTxt + '”']);
     if (F.idioma) a.push(['idioma', { com: 'Com PT-BR', dub: 'Dublado em PT-BR', sem: 'Sem PT-BR' }[F.idioma]]);
-    if (F.ordem !== 'pop') a.push(['ordem', 'Ordem: ' + NOMES_ORDEM[F.ordem]]);
+    if (F.ordem !== ORDEM_PADRAO) a.push(['ordem', 'Ordem: ' + NOMES_ORDEM[F.ordem]]);
     if (F.rom) a.push(['rom', 'Só com romance']);
     if (F.ctrl) a.push(['ctrl', 'Só com controle']);
     if (F.naoRoda) a.push(['naoRoda', 'Mostrando os que não rodam']);
@@ -497,7 +539,7 @@
   }
   function sincronizarCampos() {
     $('f-idioma').value = F.idioma; $('f-ordem').value = F.ordem;
-    $('f-idioma').classList.toggle('ativo', !!F.idioma); $('f-ordem').classList.toggle('ativo', F.ordem !== 'pop');
+    $('f-idioma').classList.toggle('ativo', !!F.idioma); $('f-ordem').classList.toggle('ativo', F.ordem !== ORDEM_PADRAO);
     $('c-rom').checked = F.rom; $('c-ctrl').checked = F.ctrl;
     $('c-nao').checked = F.naoRoda; $('c-18').checked = F.esc18; $('c-vet').checked = F.escVet;
   }
@@ -699,13 +741,17 @@
     h += '<div class="f-heroi" style="--gc:' + cor + '">' + (g.c ? '<img class="f-fundo" alt="" aria-hidden="true" src="' + esc(urlMini(g.c)) + '">' : '') +
       '<div class="f-capa-box"><span class="capa-sem" aria-hidden="true">' + esc(g.n) + '</span>' + imgCapa(g, 'f-capa', false) + '</div></div>';
     h += '<div class="f-tit"><h2 id="f-nome">' + esc(g.n) + '</h2><p class="f-gen">' + esc([gen, g.a, g.em_breve ? 'ainda não lançado' : ''].filter(Boolean).join(' · ')) + '</p>' +
-      '<div class="selos">' + selosTodos(g) + '</div></div>';
+      '<div class="selos">' + selosTodos(g, true) + '</div></div>';
     h += planosHTML(g);
     h += '<div class="links"><a class="btn btn-forte" href="https://store.steampowered.com/app/' + g.i + '/" target="_blank" rel="noopener">Abrir na Steam</a>' +
       '<a class="btn" href="steam://store/' + g.i + '">Abrir no app da Steam</a></div>';
     if (estado === 'carregando') h += '<p class="f-carregando">Carregando os detalhes…</p>';
     else if (estado === 'erro') h += '<p class="aviso">Não deu para carregar os detalhes deste jogo. <button type="button" class="btn" data-f="recarregar">Tentar de novo</button></p>';
-    if (g.pq) h += '<p class="f-pq"><b>Por que é a sua cara:</b> ' + esc(g.pq) + '</p>';
+    var gosto = GOSTO[g.nv], pq = pqDe(g);
+    if (gosto || pq) {
+      h += '<p class="f-pq"><b>' + (gosto ? gosto[0] + ' ' + gosto[1] : '🎯 Pra você') + (g.pv != null ? ' (' + g.pv + ' de 100)' : '') + '</b>' +
+        (pq ? '<br>Por que é a sua cara: ' + esc(pq) : '') + (g.sw === 'fav' ? '<br>Você deu estrela a ele na Estante do Switch.' : '') + '</p>';
+    }
     if (f && f.ds) h += '<p class="f-desc">' + esc(f.ds) + '</p>';
     h += '<div class="f-pcs">' + blocoPC(g, f, 'pai', 0) + blocoPC(g, f, 'meu', 1) + '</div>';
     var etqs = f && f.tg && f.tg.length ? f.tg.map(function (t) { return TAG_PT[t] || t; }) : g._tp;
@@ -736,6 +782,7 @@
     if (g['do']) linha('Donos', 'a partir de ' + fmtN.format(g['do']) + ' (SteamSpy)');
     if (g.s != null) linha('No disco', gb(g.s));
     linha('Controle', g.ct === 2 ? 'Suporte total' : g.ct === 1 ? 'Suporte parcial' : '');
+    linha('Romance', esc(textoRom(g)) || (g.rk === undefined && TEM_PV ? 'Sem romance' : ''));
     linha('Português', g.pt === 2 ? 'Dublado em PT-BR' : g.pt === 1 ? 'Interface e legendas em PT-BR' : g.pp ? 'Só português de Portugal' : 'Sem português');
     if (f) {
       linha('Idiomas', esc(f.lg));
@@ -774,7 +821,7 @@
     var velho = dlg.querySelector('.planos');
     if (velho) velho.outerHTML = planosHTML(g);
     var sel = dlg.querySelector('.f-tit .selos');
-    if (sel) sel.innerHTML = selosTodos(g);
+    if (sel) sel.innerHTML = selosTodos(g, true);
   });
 
   // ---------------- marcar ----------------
@@ -833,7 +880,7 @@
         '<div class="t-capa-box"><span class="capa-sem" aria-hidden="true">' + esc(g.n) + '</span>' + imgCapa(g, 't-img', false) + '</div>' +
         '<span class="t-carimbo t-c-sim">QUERO</span><span class="t-carimbo t-c-nao">NÃO</span><span class="t-carimbo t-c-int">☆ INTERESSE</span>' +
       '</div>' +
-      '<div class="t-corpo"><h3 class="t-tit">' + esc(g.n) + '</h3><div class="selos">' + selosTodos(g) + '</div>' +
+      '<div class="t-corpo"><h3 class="t-tit">' + esc(g.n) + '</h3><div class="selos">' + selosTodos(g, true) + '</div>' +
         '<div class="t-vered">' + pc('pai', 0) + pc('meu', 1) + '</div>' +
         (f && f.ds ? '<p class="t-desc">' + esc(f.ds) + '</p>' : '') +
         '<button type="button" class="ver" data-t="ficha">Ver a ficha completa</button>' +
@@ -1166,6 +1213,15 @@
   if (window.ResizeObserver) new ResizeObserver(medirTopo).observe($('barra-topo'));
   window.addEventListener('resize', medirTopo);
 
+  // "↑ Topo": aparece depois de rolar um pouco e leva de volta à busca e aos gêneros
+  var bSubir = $('b-subir'), subirPend = false;
+  window.addEventListener('scroll', function () {
+    if (subirPend) return;
+    subirPend = true;
+    setTimeout(function () { subirPend = false; bSubir.hidden = window.scrollY < 700; }, 150);
+  }, { passive: true });
+  bSubir.addEventListener('click', function () { $('barra-topo').scrollIntoView({ block: 'start' }); $('q').focus({ preventScroll: true }); });
+
   // ---------------- início ----------------
   // o app sempre abre no catálogo completo: busca e filtros começam vazios (o navegador às vezes devolve o texto da busca)
   $('q').value = '';
@@ -1183,4 +1239,28 @@
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
   }
+})();
+
+/* 1.7.5 (26/11): no celular os chips de gênero ficam em 2 linhas; o botão abre e fecha o resto */
+(function () {
+  var g = document.getElementById('gens');
+  if (!g || !window.matchMedia) return;
+  var mq = window.matchMedia('(max-width: 699px)');
+  var b = document.createElement('button');
+  b.type = 'button'; b.className = 'gens-mais'; b.setAttribute('aria-controls', 'gens');
+  g.parentNode.insertBefore(b, g.nextSibling);
+  var aberto = false;
+  function pintar() {
+    var cel = mq.matches;
+    g.classList.toggle('fechado', cel && !aberto);
+    b.hidden = !cel || (!aberto && g.scrollHeight <= 80);
+    b.textContent = aberto ? 'Menos gêneros ▴' : 'Todos os gêneros (' + g.children.length + ') ▾';
+    b.setAttribute('aria-expanded', String(aberto));
+  }
+  b.addEventListener('click', function () { aberto = !aberto; pintar(); });
+  // ao tocar num gênero, fecha de novo (a página já desce até ele)
+  g.addEventListener('click', function (e) { if (aberto && e.target.closest('button')) { aberto = false; setTimeout(pintar, 0); } });
+  if (mq.addEventListener) mq.addEventListener('change', pintar);
+  if (window.MutationObserver) new MutationObserver(pintar).observe(g, { childList: true });
+  pintar();
 })();

@@ -253,6 +253,12 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent);
 .selo.nota-m { border-color: var(--t2); color: var(--t2); }
 .selo.nota-b { border-color: var(--t1); color: var(--t1); }
 .selo.rom { border-color: var(--rom); color: var(--rom); background: var(--rom-bg); }
+.selo.rom.leve { border-style: dashed; background: transparent; font-weight: 500; }
+.selo.rom-nc { border-style: dashed; color: var(--muted); font-weight: 500; }
+.selo.gosto { border-color: var(--line); color: var(--ink-forte); background: var(--surface2); }
+/* botão flutuante para subir (a barra do topo não acompanha a rolagem) */
+.b-subir { position: fixed; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 7; min-width: 44px; height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--accent); background: var(--surface); color: var(--accent); font: inherit; font-size: 14px; font-weight: 700; box-shadow: 0 3px 12px rgba(0,0,0,.35); cursor: pointer; }
+body.com-barra .b-subir { bottom: calc(64px + env(safe-area-inset-bottom)); }
 .selo.veto, .selo.ad { border-color: var(--veto); color: var(--veto); }
 .selo.plano { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -397,4 +403,35 @@ html.t-aberto { overflow: hidden; }
 }
 @media (prefers-reduced-motion: reduce) {
   .meter .fill, .bd-fill, .t-card { transition: none; }
+}
+
+/* 1.7.5 (26/11) — celular: o topo fica curto para os jogos aparecerem logo na primeira tela.
+   Pedido do usuário: nada desce junto com a rolagem e nada de rolar para o lado (os gêneros quebram em linhas). */
+.gens { flex-wrap: wrap; overflow: visible; }
+@media (max-width: 699px) {
+  .wrap { gap: 10px; }
+  .cabeca { grid-template-columns: 1fr; gap: 8px; }
+  .cabeca h1 { font-size: 26px; }
+  .cabeca .sub { font-size: 13px; margin-top: 2px; }
+  .cabeca .resumo { display: none; }
+  .cabeca-bts { justify-content: flex-start; gap: 6px; }
+  .cabeca-bts .btn { font-size: 13px; padding: 6px 10px; min-height: 36px; }
+  .meta-steam { display: none; }
+  .barra-topo { padding-top: 6px; gap: 6px; }
+  .gens { gap: 6px; }
+  .gens > * { font-size: 13px !important; padding: 5px 10px !important; min-height: 32px; }
+  #pc-expl { display: none; }
+  .seg button { min-height: 36px; font-size: 13px; padding: 4px 10px; }
+  .tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+  .tile { padding: 6px 4px; border-radius: 9px; text-align: center; justify-items: center; }
+  .tile .num { font-size: 18px; }
+  .tile .lbl { font-size: 11px; line-height: 1.15; }
+  .tile .dsc { display: none; }
+}
+/* 1.7.5: no celular os gêneros mostram 2 linhas; "Todos os gêneros" abre o resto */
+.gens-mais { display: none; }
+@media (max-width: 699px) {
+  .gens.fechado { max-height: 72px; overflow: hidden; }
+  .gens-mais { display: inline-block; justify-self: start; font: inherit; font-size: 13px; font-weight: 600; color: var(--accent); background: none; border: 0; padding: 4px 2px; min-height: 32px; cursor: pointer; }
+  .gens-mais[hidden] { display: none; }
 }
