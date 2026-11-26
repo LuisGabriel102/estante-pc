@@ -1600,6 +1600,7 @@
     ['nota', '★ Nota dos jogadores', 'Quanto a nota da Steam conta, para cima e para baixo.', ['nt']],
     ['pt', '💬 Português', '0 = aceito sem PT-BR (eu traduzo); 2 = faz muita diferença ter PT-BR.', ['id']],
     ['sw', '★ O que marquei no Switch', 'Mesmo jogo, mesma série ou editora, e as pistas que você curte.', ['sf', 'ss', 'se', 'ed', 'pi']],
+    ['amo', '❤ Parecidos com os que eu amo', 'Jogos parecidos com os que você marcou pra baixar (peso alto) e com os de interesse (peso médio).', ['pa', 'pm', 'ma', 'mi']],
     ['nao', '✕ Tipos que não curto', 'Esporte, corrida, tiro, festa, multijogador, gênero que você nunca marca.', ['nu', 'ad', 'du']]
   ];
   var GRUPO_COD = {};
@@ -1649,7 +1650,8 @@
     gN: 'RPG nichado', gR: 'RPG retrô', gC: 'CRPG', gP: 'RPG', gT: 'tática', pi: 'tem coisas que você curte', nu: 'gênero que você quase não marca',
     ad: 'foco em conteúdo adulto', du: 'longo demais', n_es: 'esporte', n_co: 'corrida', n_fe: 'festa e minigames', n_mp: 'multijogador',
     n_lu: 'luta', n_ti: 'tiro', n_ca: 'casual', n_ed: 'nem é bem um jogo', n_ki: 'feito pra criança', n_ac: 'pede muito reflexo',
-    n_hr: 'terror', n_pz: 'mais quebra-cabeça que história' };
+    n_hr: 'terror', n_pz: 'mais quebra-cabeça que história',
+    pa: 'parecido com um jogo que você ama', pm: 'parecido com um que te chamou a atenção', ma: 'você marcou pra baixar (ama)', mi: 'te chamou a atenção' };
   function txtCod(g, c, w) {
     if (c === 'nt') return g.r != null ? 'nota ' + g.r + '%' : 'sem nota';
     if (c === 'id') return w > 0 ? (g.pt === 2 ? 'dublado em PT-BR' : g.pt ? 'tem PT-BR' : 'curto, dá pra traduzir') : 'sem PT-BR';

@@ -575,3 +575,14 @@ html[data-capas="g"] .nome { font-size: 16px; }
   --sombra: 0 10px 30px rgba(20, 40, 60, .18);
   color-scheme: light;
 }
+
+/* 1.10.1 (26/11): no PC (tela larga) volta a grade da 1.8, que o usuário achou boa: 4 capas por linha,
+   página de até 1180 px (capas de ~284 px). As seções do catálogo mostram 2 linhas (8 jogos). O celular não muda. */
+@media (min-width: 1000px) {
+  .wrap { max-width: 1180px; }
+  html:not([data-capas="p"]):not([data-capas="g"]) .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 14px; }
+  html:not([data-capas="p"]):not([data-capas="g"]) .sec .grid > :nth-child(n+7) { display: grid; }
+  html:not([data-capas="p"]):not([data-capas="g"]) .sec .grid > :nth-child(n+9) { display: none; }
+  .mrom-parte .grid > :nth-child(n+7) { display: grid; }
+  .mrom-parte .grid > :nth-child(n+9) { display: none; }
+}
