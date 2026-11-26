@@ -436,7 +436,8 @@
   }
 
   // ---------------- navegação: grade, catálogo e gêneros ----------------
-  function topoH() { return $('barra-topo').getBoundingClientRect().height; }
+  // 26/11: a barra do topo não acompanha mais a rolagem (pedido do usuário); só conta a altura dela se voltar a ser fixa
+  function topoH() { var b = $('barra-topo'), p = getComputedStyle(b).position; return p === 'sticky' || p === 'fixed' ? b.getBoundingClientRect().height : 0; }
   function rolarPara(el) {
     if (!el) return;
     el.scrollIntoView({ block: 'start' });
@@ -937,7 +938,7 @@
       return true;
     });
     l.sort(function (a, b) { return a.o - b.o; });
-    return l.map(function (g) { return urlMini(g.c); });
+    return l.map(function (g) { return { mini: urlMini(g.c), orig: BASE + g.c }; });
   }
   function montarEscopos() {
     var sel = $('dc-escopo'), atual = sel.value || GC.escopo || 'tudo';
@@ -954,7 +955,7 @@
     var urls = escopoLista($('dc-escopo').value);
     caches.open(CACHE_IMG).then(function (c) { return c.keys(); }).then(function (ks) {
       var s = new Set(ks.map(function (r) { return r.url; }));
-      var n = urls.filter(function (u) { return s.has(u); }).length;
+      var n = urls.filter(function (u) { return s.has(u.mini); }).length;
       if (GC.rodando) return;
       pintarGC(n, urls.length, n === urls.length && urls.length ? 'Todas já estão guardadas neste aparelho.' : fmtN.format(n) + ' de ' + fmtN.format(urls.length) + ' já estão guardadas.');
     }).catch(function () {});
@@ -976,6 +977,7 @@
       var feitas = GC.ok + GC.ja + GC.erro, total = GC.fila.length;
       var txt = fmtN.format(feitas) + ' de ' + fmtN.format(total) + ' · ' + fmtN.format(GC.ok) + ' baixadas agora · ' + fmtN.format(GC.ja) + ' já estavam guardadas' +
         (GC.erro ? ' · ' + fmtN.format(GC.erro) + ' falharam' : '') +
+        (GC.semWsrv ? ' · o serviço das capas pequenas recusou, então guardei as originais da Steam (maiores)' : '') +
         (GC.rodando ? (GC.pausado ? ' · pausando…' : '') : (feitas >= total ? ' · pronto!' : ' · pausado'));
       pintarGC(feitas, total, txt);
       $('dc-baixar').hidden = GC.rodando;
@@ -1000,12 +1002,13 @@
       return;
     }
     var u = GC.fila[GC.i++];
+    var orig = u.orig; u = u.mini;
+    function pega(x) { return fetch(x, { mode: 'cors', credentials: 'omit' }).then(function (resp) { if (!resp.ok) throw new Error('http ' + resp.status); return resp; }); }
     GC.cache.match(u).then(function (r) {
       if (r) { GC.ja++; return; }
-      return fetch(u, { mode: 'cors', credentials: 'omit' }).then(function (resp) {
-        if (!resp.ok) throw new Error('http ' + resp.status);
-        return GC.cache.put(u, resp).then(function () { GC.ok++; });
-      });
+      // se o wsrv.nl recusar (limite por IP ou fora do ar), guarda a capa original da Steam no lugar da pequena
+      var p = GC.semWsrv ? pega(orig) : pega(u).catch(function () { GC.semWsrv = true; return pega(orig); });
+      return p.then(function (resp) { return GC.cache.put(u, resp).then(function () { GC.ok++; }); });
     }).catch(function () { GC.erro++; }).then(function () { uiGC(); trabalhador(); });
   }
   function baixarCapas() {
@@ -1013,7 +1016,7 @@
     if (GC.rodando) return;
     var k = $('dc-escopo').value;
     if (GC.escopo !== k || GC.i >= GC.fila.length) {
-      GC.fila = escopoLista(k); GC.i = 0; GC.ok = GC.ja = GC.erro = 0; GC.escopo = k;
+      GC.fila = escopoLista(k); GC.i = 0; GC.ok = GC.ja = GC.erro = 0; GC.escopo = k; GC.semWsrv = false;
     }
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(atualizarEspaco).catch(function () {});
     GC.rodando = true; GC.pausado = false;

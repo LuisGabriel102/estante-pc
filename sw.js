@@ -45,14 +45,34 @@ self.addEventListener('fetch', function (e) {
   if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') e.respondWith(swr(e, CASCA));
 });
 
+// capa pequena do wsrv.nl -> endereço da original na Steam (o parâmetro url)
+function origDeMini(u) {
+  try { var x = new URL(u); if (x.hostname !== 'wsrv.nl') return ''; var o = x.searchParams.get('url'); return o ? 'https://' + o.replace(/^https?:\/\//, '') : ''; }
+  catch (e) { return ''; }
+}
+// se o wsrv.nl recusar (fora do ar ou limite por IP, erro 403/1106), usa a original da Steam por 10 minutos
+var wsrvForaAte = 0;
+function buscar(u) { return fetch(u, { mode: 'cors', credentials: 'omit' }); }
 function imagem(req) {
   return caches.open(IMG).then(function (c) {
     return c.match(req.url).then(function (r) {
       if (r) return r;
-      return fetch(req.url, { mode: 'cors', credentials: 'omit' }).then(function (resp) {
-        if (resp.ok) c.put(req.url, resp.clone()).catch(function () {});
+      var orig = origDeMini(req.url);
+      var pegaOrig = function () {
+        return buscar(orig).then(function (r2) {
+          if (r2.ok) c.put(req.url, r2.clone()).catch(function () {}); // guarda a original no lugar da pequena
+          return r2;
+        });
+      };
+      if (orig && Date.now() < wsrvForaAte) return pegaOrig();
+      return buscar(req.url).then(function (resp) {
+        if (resp.ok) { c.put(req.url, resp.clone()).catch(function () {}); return resp; }
+        if (orig) { wsrvForaAte = Date.now() + 600000; return pegaOrig(); }
         return resp;
-      }).catch(function () { return fetch(req); }); // sem CORS: entrega sem guardar
+      }).catch(function () {
+        if (orig) { wsrvForaAte = Date.now() + 600000; return pegaOrig(); }
+        return fetch(req); // sem CORS: entrega sem guardar
+      });
     });
   });
 }
