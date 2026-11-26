@@ -107,7 +107,8 @@ function swr(e, nome) {
 function paginaRede(e) {
   var req = e.request;
   return caches.open(CASCA).then(function (c) {
-    var rede = fetch(req).then(function (resp) {
+    // 1.7.6: pede a página sem o cache do navegador (o GitHub manda guardar por 10 min e o celular via a versão velha)
+    var rede = fetch(req.url, { cache: 'no-store', credentials: 'same-origin' }).then(function (resp) {
       if (resp.ok) e.waitUntil(c.put(req, resp.clone()).catch(function () {}));
       return resp;
     });

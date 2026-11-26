@@ -1264,3 +1264,36 @@
   if (window.MutationObserver) new MutationObserver(pintar).observe(g, { childList: true });
   pintar();
 })();
+
+/* 1.7.6 (26/11): o site não fica preso numa versão velha.
+   - confere ao abrir e ao voltar para a aba se o site publicado tem outra versão; se tiver, mostra "toque para atualizar"
+   - quando o service worker novo assume, recarrega uma vez sozinho (só se já havia um antes) */
+(function () {
+  var minha = (window.CONF && CONF.versao) || '';
+  var aviso = null, ultima = 0;
+  function mostrar(v) {
+    if (aviso) return;
+    aviso = document.createElement('button');
+    aviso.type = 'button'; aviso.className = 'aviso-versao';
+    aviso.textContent = '✨ Saiu a versão ' + v + ': toque para atualizar';
+    aviso.addEventListener('click', function () { location.reload(); });
+    document.body.appendChild(aviso);
+  }
+  function conferir() {
+    if (!minha || !/^https?:$/.test(location.protocol) || Date.now() - ultima < 60000) return;
+    ultima = Date.now();
+    fetch('./?nova=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (t) {
+      var m = /"versao":"([^"]+)"/.exec(t);
+      if (m && m[1] !== minha) mostrar(m[1]);
+    }).catch(function () {});
+  }
+  setTimeout(conferir, 4000);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') conferir(); });
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    var recarregou = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (recarregou || document.querySelector('dialog[open]')) return;
+      recarregou = true; location.reload();
+    });
+  }
+})();
