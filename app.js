@@ -23,7 +23,7 @@
   var CACHE_IMG = 'epc-img-v1'; // o mesmo nome do sw.js
   var POR_VEZ = 48;
   var POR_SECAO = 12; // 2 linhas de 5 no PC; o CSS mostra 2 linhas de 2 no celular e de 3 no tablet
-  var TOTAL_STEAM = 110000;
+  var TOTAL_STEAM = (window.CONF && window.CONF.total_steam) || 110000;
   var PCS = CONF.pcs || { pai: { nome: 'PC do pai' }, meu: { nome: 'Meu notebook' } };
   var CURTO = { pai: 'Pai', meu: 'Note' };
   var NIVEL = {
@@ -148,7 +148,7 @@
   var ORDEM_PADRAO = 'pop'; // vira "pv" (Mais a sua cara) quando a lista traz o pv
   function filtrosPadrao() {
     return { q: [], qTxt: '', idioma: '', ordem: ORDEM_PADRAO, rom: '', esc18: false, escVet: true, roda: '', ctrl: false,
-      cor: [], gen: '', et: [], nota: 0, tam: '', meus: '', facil: false };
+      cor: [], gen: '', et: [], nota: 0, tam: '', meus: '', facil: false, ofic: false };
   }
   var F = filtrosPadrao();
   F.pc = AJ.pc === 'pai' || AJ.pc === 'meu' ? AJ.pc : 'dois';
@@ -162,7 +162,27 @@
   var ARQS = CONF.arqs || [];
   var ARQ_N = {};
   ARQS.forEach(function (a) { ARQ_N[a.n] = a; });
-  var fila = ARQS.map(function (a) { return a.n; }); // partes da lista que faltam
+  // 1.12: as partes "nr" (jogos que não rodam em nenhum dos dois PCs, escondidos por padrão) só vêm quando alguém pede
+  var fila = ARQS.filter(function (a) { return !a.nr; }).map(function (a) { return a.n; }); // partes da lista que faltam
+  var NR_PEND = ARQS.filter(function (a) { return a.nr; }).map(function (a) { return a.n; });
+  function nrFalta() { var t = 0; NR_PEND.forEach(function (n) { t += (ARQ_N[n] && ARQ_N[n].j) || 0; }); return t; }
+  function pedirNR() {
+    if (!NR_PEND.length) return;
+    var ocioso = !fila.length;
+    fila = fila.concat(NR_PEND); NR_PEND = [];
+    if (ocioso) pedirLista();
+  }
+  // precisa dos que não rodam: mostrar/listar os que não rodam, busca, marcações, listas famosas e melhores romances
+  function precisaNR(fo) {
+    if (F.roda === 'todos' || F.roda === 'nao' || F.q.length) return true;
+    return !!fo && ((fo.t === 'nivel' && fo.k === 1) || fo.t === 'busca' || fo.t === 'aba' || fo.t === 'lista' || fo.t === 'mrom');
+  }
+  // alguma marcação sua é de um jogo que ainda não veio? (ele pode estar numa parte "nr")
+  function marcadoFalta() {
+    var ks = Object.keys(M.int).concat(Object.keys(M.inst), Object.keys(M.plano));
+    for (var i = 0; i < ks.length; i++) if (!POR_ID[ks[i]]) return true;
+    return false;
+  }
   var falhou = [];
   var fichaEstado = {}, fichaEspera = {};
   var TAG_PT = {};
@@ -175,6 +195,8 @@
     g._et = g.et ? g.et.split(' ') : [];
     g._px = g.px ? g.px.split(' ').map(function (t) { var m = /^([a-zA-Z_]+)(-?[\d.]+)$/.exec(t); return m ? [m[1], +m[2]] : null; }).filter(Boolean) : null;
     if (g.o == null) g.o = 999999;
+    // 1.12: a lista encurta a capa da Steam (sem "c" = APPID/header.jpg; "c" sem barra = APPID/c/header.jpg)
+    if (typeof g.i === 'number') { if (!g.c) g.c = g.i + '/header.jpg'; else if (g.c.indexOf('/') < 0) g.c = g.i + '/' + g.c + '/header.jpg'; }
     g._ext = /^https?:/.test(g.c || '');
     if (g.loja && !FICHAS[g.i]) FICHAS[g.i] = g.fi || g.ficha || { ds: g.ds || '' };
     if (g.ef != null) TEM_EF = true;
@@ -188,7 +210,7 @@
     document.head.appendChild(s);
   }
   function pedirLista(tentativa) {
-    if (!fila.length) { agendar(); return; }
+    if (!fila.length) { if (NR_PEND.length && marcadoFalta()) { pedirNR(); return; } agendar(); return; }
     var a = ARQ_N[fila[0]];
     tentativa = tentativa || 0;
     injetar('dados/lista_' + dois(a.n) + '.js?v=' + a.v + (tentativa ? '&t=' + tentativa : ''), function () {
@@ -204,6 +226,7 @@
       if (!g.f) g.f = n;
       if (g.jo != null) TEM_JO = true;
       if (g.pv != null) TEM_PV = true;
+      if (g.ve || g.vm) TEM_VE = true;
       prep(g); JOGOS.push(g); POR_ID[g.i] = g;
     });
     if (M.voto && Object.keys(M.voto).length) recalcGosto();
@@ -284,7 +307,7 @@
   function ordPv(a, b) { return pvDe(b) - pvDe(a) || notaP(b) - notaP(a) || a.o - b.o; }
   function paraVoce(g) { return corDe(g) === 'sim' && !M.plano[g.i] && !M.int[g.i] && nv(g) >= 3; }
   // joia: usa o campo jo quando a lista traz esse campo; se não, a regra da nota e das poucas avaliações
-  var TEM_JO = false, TEM_PV = false, TEM_EF = false;
+  var TEM_JO = false, TEM_PV = false, TEM_EF = false, TEM_VE = false;
   function ehJoia(g) {
     if (TEM_JO) return g.jo === 1;
     return (g.r || 0) >= 90 && ((g.rv >= 500 && g.rv <= 20000) || (g['do'] || 0) <= 500000);
@@ -374,6 +397,7 @@
     }
     if (ign !== 'mais' && F.ctrl && !g.ct) return false;
     if (ign !== 'idioma' && F.facil && !(!g.pt && g.efd === 'facil')) return false;
+    if (ign !== 'ofic' && F.ofic && !soOficial(g)) return false; // 1.12: só medidos ou oficiais (tira os estimados)
     if (!semEsconder && ign !== 'mais') {
       if (F.esc18 && g.ad) return false;
       if (F.escVet && g._vet) return false;
@@ -401,6 +425,7 @@
   }
   // percorre todos os jogos uma vez: lista que passa, contagem por nível e quantos "não roda" ficaram escondidos
   function filtrar(fo, ign) {
+    if (NR_PEND.length && precisaNR(fo)) pedirNR();
     var semEsc = !!fo && (fo.t === 'aba' || fo.t === 'lista');
     var cont = [0, 0, 0, 0, 0], lista = [], escondidos = 0;
     for (var i = 0; i < JOGOS.length; i++) {
@@ -434,10 +459,19 @@
   function seloNivel(n, rot) {
     return '<span class="selo nv' + n + '" title="' + esc((rot ? (rot === CURTO.pai ? PCS.pai.nome : PCS.meu.nome) + ': ' : '') + NIVEL[n].nome) + '">' + esc(rot ? rot + ' ' + NIVEL[n].sim : NIVEL[n].nome) + '</span>';
   }
+  // 1.12: desempenho estimado (a loja ainda não foi lida): selo discreto depois dos selos de PC
+  var SELO_EST = '<span class="selo est" title="Desempenho estimado: a loja ainda não foi lida (vira oficial quando os requisitos chegarem)">≈ estimado</span>';
+  // vm: 1 = medido nos dois PCs; [1, 0] / [0, 1] = só num deles (Notebookcheck). Confiança: medido > requisitos > estimado
+  function medidoEm(g, idx) { return g.vm === 1 || (Array.isArray(g.vm) && g.vm[idx] === 1); }
+  function seloConf(g) {
+    if (g.vm) return '<span class="selo est med" title="Desempenho MEDIDO: fps de verdade (Notebookcheck)' + (g.vm === 1 ? '' : ', só ' + (g.vm[0] ? noPC('pai') : noPC('meu'))) + '">📏 medido</span>';
+    return g.ve ? SELO_EST : '';
+  }
+  function soOficial(g) { return g.vm === 1 || !g.ve; } // "Só medidos ou oficiais"
   function selosNivel(g) {
-    var v = g.v || [0, 0];
-    if (F.pc === 'dois') return seloNivel(v[0] || 0, CURTO.pai) + seloNivel(v[1] || 0, CURTO.meu);
-    return seloNivel(nv(g));
+    var v = g.v || [0, 0], e = seloConf(g);
+    if (F.pc === 'dois') return seloNivel(v[0] || 0, CURTO.pai) + seloNivel(v[1] || 0, CURTO.meu) + e;
+    return seloNivel(nv(g)) + e;
   }
   // a bolinha do "Pra você", igual à do Switch (mod_W_porque.js: selo "w-selo" no começo dos selos)
   function seloGosto(g) {
@@ -516,7 +550,8 @@
     var r = cat ? BASE_ATUAL : desenharGrade(manter);
     if (cat) desenharCatalogo();
     var t = cat ? '<strong>' + jogosTxt(r.lista.length) + '</strong> com os filtros de agora' : 'Mostrando <strong>' + fmtN.format(r.lista.length) + '</strong> de ' + fmtN.format(JOGOS.length) + ' jogos';
-    if (r.escondidos) t += ' · ' + fmtN.format(r.escondidos) + ' que não rodam ficam escondidos';
+    var escN = r.escondidos + (!F.roda && cat ? nrFalta() : 0); // 1.12: + os das partes "nr" que ainda não vieram
+    if (escN) t += ' · ' + fmtN.format(escN) + ' que não rodam ficam escondidos';
     if (fila.length) t += ' · carregando…';
     $('mostrando').innerHTML = t;
     $('b-todos').innerHTML = 'Ver todos os ' + jogosTxt(BASE_ATUAL.lista.length) + ' <span aria-hidden="true">›</span>';
@@ -550,7 +585,7 @@
   function niveisHTML(cont) {
     var h = [4, 3, 2, 1, 0].map(function (n) {
       var dsc = n === 1 ? (F.roda ? 'Aparecendo na lista' : NIVEL[1].dsc) : NIVEL[n].dsc;
-      return '<button type="button" class="nv-t n' + n + '" data-nv="' + n + '" aria-pressed="false"><span class="num">' + fmtN.format(cont[n]) + '</span><span class="lbl">' + NIVEL[n].nome + '</span><span class="dsc">' + dsc + '</span></button>';
+      return '<button type="button" class="nv-t n' + n + '" data-nv="' + n + '" aria-pressed="false"><span class="num">' + fmtN.format(cont[n] + (n === 1 ? nrFalta() : 0)) + '</span><span class="lbl">' + NIVEL[n].nome + '</span><span class="dsc">' + dsc + '</span></button>';
     }).join('');
     return '<section class="sec" id="sec-niveis" aria-labelledby="sec-niveis-t"><div class="sec-cab"><h2 id="sec-niveis-t"><span aria-hidden="true">💻</span>' +
       (F.pc === 'dois' ? 'Desempenho nos seus PCs' : 'Desempenho ' + esc(noPC(F.pc))) + '</h2></div>' +
@@ -696,6 +731,7 @@
     if (F.ordem !== ORDEM_PADRAO && V.modo === 'catalogo') a.push(['ordem', 'Ordem: ' + NOMES_ORDEM[F.ordem]]);
     if (F.ctrl) a.push(['ctrl', 'Só com controle']);
     if (F.facil) a.push(['facil', '✍️ Fácil de traduzir']);
+    if (F.ofic) a.push(['ofic', 'Só medidos ou oficiais']);
     if (F.esc18) a.push(['esc18', 'Escondendo +18']);
     if (!F.escVet) a.push(['escVet', 'Mostrando vetados']);
     return a;
@@ -718,7 +754,7 @@
   }
   function limpar() {
     var p = filtrosPadrao();
-    ['idioma', 'ordem', 'rom', 'esc18', 'escVet', 'roda', 'ctrl', 'cor', 'gen', 'et', 'nota', 'tam', 'meus', 'facil'].forEach(function (k) { F[k] = p[k]; });
+    ['idioma', 'ordem', 'rom', 'esc18', 'escVet', 'roda', 'ctrl', 'cor', 'gen', 'et', 'nota', 'tam', 'meus', 'facil', 'ofic'].forEach(function (k) { F[k] = p[k]; });
     if (F.q.length) { $('q').value = ''; aplicarBusca(''); } else redesenharFiltros();
   }
   function redesenharFiltros() {
@@ -798,7 +834,8 @@
     h.push(secFolha('Roda no PC', F.pc === 'dois' ? 'no melhor dos dois' : esc(PCS[F.pc].nome), '<div class="pills">' + pilula('roda', '', 'Esconder os que não rodam', !F.roda) +
       ['roda', 'liso', 'limite', 'nao', 'sem', 'todos'].map(function (k) {
         return pilula('roda', k, { roda: 'Roda', liso: 'Roda liso', limite: 'No limite', nao: 'Não roda', sem: 'Sem dados', todos: 'Mostrar todos' }[k], F.roda === k, c.c[k] || 0);
-      }).join('') + '</div>'));
+      }).join('') + '</div>' + (TEM_VE ? '<div class="pills" style="margin-top:6px">' + pilula('ofic', '1', 'Só medidos ou oficiais', F.ofic, contagem('ofic', function (g) { return soOficial(g) ? 'o' : 'e'; }).c.o || 0) +
+      '</div><p class="fine" style="margin-top:6px">📏 medido: fps de verdade (Notebookcheck) · sem selo: pelos requisitos da loja · ≈ estimado: a loja ainda não foi lida; o desempenho foi chutado pelo ano, pelas etiquetas e pelo tamanho do jogo, e vira oficial quando os requisitos chegarem.</p>' : '')));
     h.push(secFolha('Nota dos jogadores', '% de análises positivas na Steam', '<div class="pills">' + pilula('nota', '0', 'Tanto faz', !F.nota) +
       [70, 80, 90].map(function (k) { return pilula('nota', String(k), k + '% ou mais', F.nota === k); }).join('') + '</div>'));
     h.push(secFolha('Tamanho no disco', '', '<div class="pills">' + pilula('tam', '', 'Tanto faz', !F.tam) +
@@ -840,7 +877,7 @@
     if (gr === 'cor') { var i = F.cor.indexOf(v); if (i >= 0) F.cor.splice(i, 1); else F.cor.push(v); if (F.cor.length === 3) F.cor = []; }
     else if (gr === 'et') { var j = F.et.indexOf(v); if (j >= 0) F.et.splice(j, 1); else F.et.push(v); }
     else if (gr === 'nota') F.nota = +v || 0;
-    else if (gr === 'ctrl' || gr === 'esc18' || gr === 'escVet' || gr === 'facil') F[gr] = !F[gr];
+    else if (gr === 'ctrl' || gr === 'esc18' || gr === 'escVet' || gr === 'facil' || gr === 'ofic') F[gr] = !F[gr];
     else F[gr] = F[gr] === v ? (gr === 'idioma' || gr === 'rom' || gr === 'gen' || gr === 'roda' || gr === 'tam' || gr === 'meus' ? '' : v) : v;
     pintarFolha();
     montarAtivos();
@@ -973,7 +1010,7 @@
   function blocoPC(g, f, k, idx) {
     var n = (g.v || [0, 0])[idx] || 0, p = PCS[k] || {};
     var mo = f && f.mo ? (f.mo[idx] || []) : g.loja ? [] : null;
-    return '<div class="f-pc nv' + n + '"><h3>Roda ' + esc(noPC(k)) + '? <span class="selo nv' + n + '">' + NIVEL[n].nome + '</span></h3>' +
+    return '<div class="f-pc nv' + n + '"><h3>Roda ' + esc(noPC(k)) + '? <span class="selo nv' + n + '">' + (medidoEm(g, idx) ? '📏 ' : g.ve ? '≈ ' : '') + NIVEL[n].nome + '</span></h3>' +
       '<span class="hw">' + esc([p.cpu_n, p.gpu_n, p.ram ? p.ram + ' GB de RAM' : ''].filter(Boolean).join(' · ')) + '</span>' +
       (mo ? (mo.length ? '<ul>' + mo.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>' : '') : '<span class="f-carregando">Carregando os motivos…</span>') +
       '</div>';
@@ -1068,6 +1105,8 @@
     h += blocoEf(g, f);
     if (estado === 'carregando') h += '<p class="f-carregando">Carregando os detalhes…</p>';
     else if (estado === 'erro') h += '<p class="aviso">Não deu para carregar os detalhes deste jogo. <button type="button" class="btn" data-f="recarregar">Tentar de novo</button></p>';
+    if (g.vm) h += '<p class="f-est">📏 Desempenho medido (fps de verdade, Notebookcheck)' + (g.vm === 1 ? '' : ' ' + (g.vm[0] ? noPC('pai') : noPC('meu')) + (g.ve ? '; no outro, estimado (a loja ainda não foi lida)' : '; no outro, pelos requisitos da loja')) + '</p>';
+    else if (g.ve) h += '<p class="f-est">≈ Desempenho estimado (a loja ainda não foi lida)</p>';
     h += '<div class="f-pcs">' + blocoPC(g, f, 'pai', 0) + blocoPC(g, f, 'meu', 1) + '</div>';
     if (f && f.sc && f.sc.length) {
       h += '<div class="f-sec"><h3>Fotos</h3><div class="fotos">' + f.sc.map(function (s, i) {
@@ -1215,7 +1254,7 @@
     var f = FICHAS[g.i], v = g.v || [0, 0];
     function pc(k, i) {
       var mo = f && f.mo ? (f.mo[i] || [])[0] : '';
-      return '<div class="t-pc nv' + (v[i] || 0) + '"><b>' + esc(PCS[k].nome) + ': ' + NIVEL[v[i] || 0].nome + '</b>' + (mo ? '<span>' + esc(mo) + '</span>' : '') + '</div>';
+      return '<div class="t-pc nv' + (v[i] || 0) + '"><b>' + esc(PCS[k].nome) + ': ' + (medidoEm(g, i) ? '📏 ' : g.ve ? '≈ ' : '') + NIVEL[v[i] || 0].nome + (medidoEm(g, i) ? ' (medido)' : g.ve ? ' (estimado)' : '') + '</b>' + (mo ? '<span>' + esc(mo) + '</span>' : '') + '</div>';
     }
     return '<div class="t-card ' + classe + '" data-id="' + g.i + '" style="--gc:' + (COR_GEN[g.g] || '#3a4a6b') + '">' +
       '<div class="t-capa">' + (g.c ? '<img class="t-fundo" alt="" aria-hidden="true" src="' + esc(urlCapa(g.c)) + '">' : '') +

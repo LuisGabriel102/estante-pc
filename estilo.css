@@ -586,3 +586,6 @@ html[data-capas="g"] .nome { font-size: 16px; }
   .mrom-parte .grid > :nth-child(n+7) { display: grid; }
   .mrom-parte .grid > :nth-child(n+9) { display: none; }
 }
+/* 1.12: desempenho estimado (a loja ainda não foi lida) — selo discreto, cinza do "sem dados" */
+.selo.est { background: rgba(95,99,104,.85); font-weight: 600; }
+.f-est { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-style: italic; }
